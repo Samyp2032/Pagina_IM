@@ -12,11 +12,17 @@ const VERB_MODES={
  past:{title:"Pasado simple",form:1,instruction:"Di el verbo en pasado simple."},
  participle:{title:"Participio pasado",form:2,instruction:"Di solo el participio pasado."}
 };
-const S={micTrack:null,micError:"",legacyMicUsed:false,verbMode:null,speed:1,qlang:"es",alang:"en",showEach:true,items:[],i:0,log:[],st:null,abort:null,run:false};
+const S={screenLock:null,micTrack:null,micError:"",legacyMicUsed:false,verbMode:null,speed:1,qlang:"es",alang:"en",showEach:true,items:[],i:0,log:[],st:null,abort:null,run:false};
 const fmt=s=>String(s/60|0).padStart(2,"0")+":"+String(s%60|0).padStart(2,"0");
 const mk=(n,l,es,en,kind="q",ord=0)=>({n,l,es,en,kind,ord});
 const shuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
-function allQ(lo=1,hi=199){const o=[];for(const[k,d]of Object.entries(D.lessons))for(const[n,es,en]of d.qs)if(n>=lo&&n<=hi)o.push(mk("#"+n,k,es,en,"q",n));return o}
+function lessonQuestions(lesson,lo=1,hi=199){
+ return D.lessons[lesson].qs.filter(([n])=>n>=lo&&n<=hi)
+  .map(([n,es,en])=>mk("#"+n,lesson,es,en,"q",n));
+}
+function allQ(lo=1,hi=199){
+ return Object.keys(D.lessons).flatMap(lesson=>lessonQuestions(lesson,lo,hi));
+}
 function revI(t,kind="q"){const[b,qs]=D.reviews[t];return qs.map(([es,en],i)=>mk(`R&C ${t}-${i+1}`,"Review "+t,es,en,kind,b+i))}
 function build(mode,chosen,rnd){
  const verbMode=VERB_MODES[mode];
@@ -29,9 +35,10 @@ function build(mode,chosen,rnd){
  if(mode=="mix")return shuf(allQ()).slice(0,15);
  if(mode=="exam"){const p1=shuf(allQ(81,115)).slice(0,5),p2=shuf(revI("5&6","expand")).slice(0,2);p2[0].pre=PRE;return p1.concat(p2)}
  if(mode=="ask")return shuf(Object.keys(D.lessons)).slice(0,5).map((k,i)=>{const d=D.lessons[k];return mk("ASK-"+(i+1),k,`Hazme una pregunta sobre ${d.te}.`,`Ask me a question about ${d.tn}.`,"ask",i)});
- let it=[];
- if(mode=="free")it=allQ();else for(const k of chosen){it=it.concat(k.startsWith("Review ")?revI(k.slice(7)):allQ().filter(x=>x.l==k))}
- return rnd?shuf(it):it}
+ const items=mode==="free"?allQ():chosen.flatMap(lesson=>
+  lesson.startsWith("Review ")?revI(lesson.slice(7)):lessonQuestions(lesson));
+ return rnd?shuf(items):items;
+}
 function dyn(o){const d=new Date(),w=(d.getDay()+6)%7;
  if(o==3)return `Today is ${DAYS[w]}.`;
  if(o==4)return w==0?"Yes, it is. Today is Monday.":`No, it isn’t. Today is ${DAYS[w]}.`;
@@ -121,7 +128,7 @@ function showPronunciation(record=true){
 function home(){
  stopPronunciation();
  $("#open-pronunciation").removeAttribute("aria-current");
- releaseMicrophone();
+ releasePracticeResources();
  S.run=false;try{speechSynthesis.cancel()}catch(e){}if(P.stop)P.stop();
  const modes=[
   ["free","Práctica libre","Recorre las preguntas del banco principal."],
@@ -208,7 +215,7 @@ async function start(){
  S.alang=S.verbMode?"en":$("#al").value;
  S.speed=+$("#spd").value;S.showEach=$("#shw").checked;
  S.items=build(mode,chosen,$("#rnd").checked);S.i=0;S.log=[];S.st={ans:0,skip:0,rep:0,secs:[]};S.run=true;
- try{navigator.wakeLock&&navigator.wakeLock.request("screen").catch(()=>{})}catch(e){}
+ keepScreenAwake(S.items);
  try{speechSynthesis.getVoices()}catch(e){}
  setScreenHistory("#sesion");
  session();
@@ -269,7 +276,7 @@ function leavePractice(){
  S.run=false;
  S.abort?.("home");
  S.abort=null;
- releaseMicrophone();
+ releasePracticeResources();
 }
 function backHome(){
  leavePractice();
@@ -282,7 +289,7 @@ function answers(record=true){
  stopPronunciation();
  if(record)setScreenHistory("#respuestas");
  $("#open-pronunciation").removeAttribute("aria-current");
- const g=Object.keys(D.lessons).map(k=>[k.startsWith("Practical")?k:"Lesson "+k,allQ().filter(x=>x.l==k)]).concat(Object.keys(D.reviews).map(t=>["Review & Check "+t,revI(t)]));
+ const g=Object.keys(D.lessons).map(k=>[k.startsWith("Practical")?k:"Lesson "+k,lessonQuestions(k)]).concat(Object.keys(D.reviews).map(t=>["Review & Check "+t,revI(t)]));
  A.innerHTML=`<section class="page-heading"><h1>Banco de respuestas</h1>
   <p>Usa estas respuestas como ejemplo y adáptalas a tu vida.</p></section>
   <div class="catalog">${g.map(([t,its])=>`<section class="box"><h2>${esc(t)}</h2>`+its.map(it=>`
@@ -292,7 +299,7 @@ function answers(record=true){
 }
 const reports=new Map();
 function summary(){
- releaseMicrophone();
+ releasePracticeResources();
  S.run=false;
  const report={stats:S.st,entries:S.log,verbMode:S.verbMode};
  const id=reports.size+1;
@@ -344,11 +351,25 @@ window.addEventListener("popstate",restoreScreen);
 
 /* ---------- voz ---------- */
 /* Las voces vienen pregrabadas en audio/ (las crea generar_audios.py). Si falta un audio, usa la voz del navegador. */
-let MAN=null;const P={stop:null};
-async function loadManifest(){
- if(MAN!==null)return MAN;
- try{const r=await fetch("audio/manifest.json");MAN=r.ok?await r.json():false}catch(e){MAN=false}
- return MAN}
+let MAN=null,manifestRequest=null;
+const P={stop:null};
+function loadManifest(){
+ if(!manifestRequest)manifestRequest=fetchManifest();
+ return manifestRequest;
+}
+async function fetchManifest(){
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),5000);
+ try{
+  const response=await fetch("audio/manifest.json",{signal:controller.signal});
+  MAN=response.ok?await response.json():false;
+ }catch(error){
+  MAN=false;
+ }finally{
+  clearTimeout(timeout);
+ }
+ return MAN;
+}
 const FEM=/dalia|paulina|sabina|helena|laura|m[oó]nica|elena|lupe|salome|camila|elvira|mar[ií]a|ximena|catalina|zira|female|mujer/i;
 const MAS=/jorge|ra[uú]l|pablo|diego|carlos|[aá]lvaro|alonso|juan|andr[eé]s|enrique|miguel|ricardo|jaime|david|male|hombre/i;
 const gender=v=>FEM.test(v.name)?"f":MAS.test(v.name)?"m":"?";
@@ -388,11 +409,25 @@ const micErrors={
  "language-not-supported":"El navegador no puede reconocer el idioma seleccionado."
 };
 
-function releaseMicrophone(){
+async function keepScreenAwake(items){
+ try{
+  const lock=await navigator.wakeLock?.request("screen");
+  if(!lock)return;
+  if(isCurrentPractice(items))S.screenLock=lock;
+  else await lock.release();
+ }catch(e){}
+}
+function releasePracticeResources(){
  S.micTrack?.stop();
  S.micTrack=null;
+ const lock=S.screenLock;
+ S.screenLock=null;
+ if(lock&&!lock.released)lock.release().catch(()=>{});
 }
-window.addEventListener("pagehide",releaseMicrophone);
+window.addEventListener("pagehide",leavePractice);
+window.addEventListener("pageshow",event=>{
+ if(event.persisted&&!S.run&&location.hash==="#sesion")restoreScreen();
+});
 
 function supportsRecognitionTrack(){
  // La presencia de SpeechRecognition no indica si acepta una pista de audio.
@@ -432,7 +467,9 @@ async function beginPractice(ready){
 }
 
 function listen(ns=20,singleWord=false){return new Promise(res=>{
- const t0=Date.now(),track=S.micTrack;
+ const t0=Date.now(),track=S.micTrack,timer=$("#timer");
+ if(timer&&timer.textContent!=="00:00")timer.textContent="00:00";
+ let displayedSeconds=0;
  let base="",cur="",vs=0,last=0,readyAt=0,over=false,rec=null,tm=0,manual=!SRC,retrying=false;
  setState("preparing");
  const txt=()=>(base+cur).trim();
@@ -464,8 +501,14 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
  }
  S.abort=action=>action==="finish"?done():end({cmd:action});
  tm=setInterval(()=>{
-  const now=Date.now(),timer=$("#timer");
-  if(timer&&readyAt)timer.textContent=fmt((now-readyAt)/1000);
+  const now=Date.now();
+  if(timer&&readyAt){
+   const seconds=Math.floor((now-readyAt)/1000);
+   if(seconds!==displayedSeconds){
+    displayedSeconds=seconds;
+    timer.textContent=fmt(seconds);
+   }
+  }
   if(now-t0>MAX*1000)return done();
   if(manual)return;
   if(!readyAt){
@@ -608,7 +651,7 @@ async function runItem(it,items){
   text=(text+" "+r2.text).trim();secs+=r2.secs;
   manual=r2.manual;
  }
- const counted=isVerb?Boolean(text):secs>0;if(counted){S.st.ans++;S.st.secs.push(secs)}
+ const counted=Boolean(text);if(counted){S.st.ans++;S.st.secs.push(secs)}
  S.log.push({it,ans:text||(isVerb?"Sin transcripción":"[sin respuesta]"),secs,model:model(it)});
  if(S.showEach||manual){
   warn("");
