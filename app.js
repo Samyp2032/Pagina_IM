@@ -178,8 +178,7 @@ function home(){
   ["free","Práctica libre","Recorre las preguntas del banco principal."],
   ["lesson","Por lección","Elige los temas que quieres practicar."],
   ["mix","Mix","Responde 15 preguntas al azar, sin Review & Check."],
-  ["exam","Simulacro Examen Oral #3","Practica con las lecciones 5 y 6."],
-  ["ask","Yo hago las preguntas","Formula tus propias preguntas sobre 5 temas."]
+  ["exam","Simulacro Examen Oral #3","Practica con las lecciones 5 y 6."]
  ];
  A.innerHTML=`
   <section class="hero">
