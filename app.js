@@ -255,7 +255,7 @@ function sessionAction(label,action){
  next.dataset.action=action;
  next.classList.toggle("alt",action==="next");
 }
-const LBL={speaking:"Escucha la pregunta",listening:"Responde en voz alta",hearing:"Escuchando tu respuesta",preparing:"Preparando la escucha",processing:"Procesando respuesta",review:"Repaso",waiting:"En espera"};
+const LBL={speaking:"Escucha la pregunta",listening:"Responde en voz alta",hearing:"Escuchando tu respuesta",preparing:"Preparando la escucha",processing:"Procesando respuesta",manual:"Micrófono no disponible",review:"Repaso",waiting:"En espera"};
 function setState(n){
  const o=$("#orb"),s=$("#st");if(!o)return;
  o.className="o-"+n;
@@ -454,7 +454,7 @@ async function speak(text,lang,file){
  if(f){try{return await playFile(f)}catch(e){console.error("audio:",e)}}
  return sysSpeak(text,lang)}
 const micErrors={
- "not-allowed":"El navegador no recibió permiso para usar el micrófono.",
+ "not-allowed":"Permite el micrófono en la configuración de este sitio para la próxima práctica.",
  "service-not-allowed":"El navegador bloqueó el reconocimiento de voz.",
  "network":"No se pudo conectar con el reconocimiento de voz.",
  "audio-capture":"No se encontró un micrófono disponible.",
@@ -556,7 +556,7 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
  const silence=singleWord?VERB_SILENCE:SIL;
  if(timer&&timer.textContent!=="00:00")timer.textContent="00:00";
  let displayedSeconds=0;
- let alternatives=[],voiceActive=false,voiceMeasured=false,finishing=false,finalTimer;
+ let alternatives=[],voiceActive=false,voiceMeasured=false,finishing=false,finalTimer,noVoiceNotice=false;
  let base="",cur="",vs=0,last=0,readyAt=0,over=false,rec=null,tm=0,manual=!SRC,retrying=false;
  setState("preparing");
  const txt=()=>(base+cur).trim();
@@ -581,7 +581,11 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
   end({text:txt(),secs:vs?(last-vs)/1000:0,manual});
  };
  function markVoice(now){
-  if(!vs){vs=now;setState("hearing")}
+  if(!vs){
+   vs=now;
+   setState("hearing");
+   if(noVoiceNotice&&!retrying)warn("");
+  }
   last=now;
  }
  function finishAnswer(){
@@ -596,7 +600,7 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
   manual=true;
   stopRecognition();
   if(!readyAt)readyAt=Date.now();
-  setState("listening");
+  setState("manual");
   sessionAction("Ver respuesta","finish");
   warn(message+" Responde en voz alta y pulsa «Ver respuesta» para ver la solución.");
  }
@@ -617,12 +621,17 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
    if(now-t0>ns*1000)waitForManualFinish("El reconocimiento de voz no se inició.");
    return;
   }
-  if(singleWord&&(voiceMeter?.()??voiceActive)){
-   voiceMeasured=true;
-   markVoice(now);
+  if(singleWord){
+   const hasSound=voiceMeter?.()===true;
+   if(hasSound)voiceMeasured=true;
+   if(hasSound||(!voiceMeasured&&voiceActive))markVoice(now);
   }
-  if(vs&&now-last>=silence)finishAnswer();
-  else if(!vs&&now-readyAt>=ns*1000)finishAnswer();
+  if(vs&&now-last>=silence)return finishAnswer();
+  if(!vs&&now-readyAt>=ns*1000)return finishAnswer();
+  if(!vs&&!retrying&&!noVoiceNotice&&now-readyAt>=5000){
+   noVoiceNotice=true;
+   warn("No se detecta voz. Revisa que el micrófono seleccionado esté activo y no esté silenciado.");
+  }
  },singleWord?50:200);
 
  if(S.micError)return waitForManualFinish(S.micError);
@@ -630,7 +639,8 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
 
  rec=new SRC();
  rec.lang=S.alang==="es"?"es-MX":"en-US";
- rec.continuous=true;
+ // Conserva el modo de frases breves cuando el navegador usa el micrófono directamente.
+ rec.continuous=!singleWord||Boolean(track);
  rec.interimResults=true;
  if(singleWord)rec.maxAlternatives=5;
  rec.onaudiostart=()=>{
@@ -642,7 +652,7 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
   rec.onspeechstart=()=>{voiceActive=true};
   rec.onspeechend=()=>{
    voiceActive=false;
-   if(!finishing&&voiceMeter?.()==null)markVoice(Date.now());
+   if(!finishing&&!voiceMeasured)markVoice(Date.now());
   };
  }
  rec.onnomatch=()=>{if(singleWord)retrying=true};
@@ -687,7 +697,8 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
     try{permission=await navigator.permissions?.query({name:"microphone"})}catch(e){}
     if(over||manual||finishing)return;
     if(permission?.state!=="granted"){
-     S.micError="Este navegador no conservó el permiso del micrófono.";
+     if(singleWord&&txt())return;
+     S.micError="El navegador dejó de tener acceso al micrófono. Permítelo en la configuración de este sitio.";
      return waitForManualFinish(S.micError);
     }
    }
