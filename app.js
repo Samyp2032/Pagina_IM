@@ -24,13 +24,13 @@ function allQ(lo=1,hi=199){
  return Object.keys(D.lessons).flatMap(lesson=>lessonQuestions(lesson,lo,hi));
 }
 function revI(t,kind="q"){const[b,qs]=D.reviews[t];return qs.map(([es,en],i)=>mk(`R&C ${t}-${i+1}`,"Review "+t,es,en,kind,b+i))}
-function build(mode,chosen,rnd){
+function build(mode,chosen,rnd,verbCount=20){
  const verbMode=VERB_MODES[mode];
  if(verbMode){
   const items=VERBOS.map((verb,i)=>({
    n:"#"+(i+1),kind:"verb",base:verb[0],answer:verb[verbMode.form]
   }));
-  return rnd?shuf(items):items;
+  return shuf(items).slice(0,verbCount===10?10:20);
  }
  if(mode=="mix")return shuf(allQ()).slice(0,15);
  if(mode=="exam"){const p1=shuf(allQ(81,115)).slice(0,5),p2=shuf(revI("5&6","expand")).slice(0,2);p2[0].pre=PRE;return p1.concat(p2)}
@@ -54,6 +54,8 @@ function modeOptions(modes,checkFirst=false){
    <span><strong>${title}</strong><small>${detail}</small></span>
   </label>`).join("");
 }
+const verbFormWords=form=>form.split("/");
+const VERBS_PER_PAGE=10;
 function verbAudioPath(word,inflected=false){
  return `audio_verbos/${inflected?"formas/":""}${encodeURIComponent(word)}.wav`;
 }
@@ -62,9 +64,12 @@ function pronunciationPanel(){
  return `<section class="box pronunciation" aria-labelledby="pronunciation-title">
   <h1 id="pronunciation-title">Pronunciación de verbos</h1>
   <p class="muted">Escucha una forma y repítela en voz alta.</p>
-  <label class="field">Verbo
-   <select id="pronunciation-verb" lang="en">${VERBOS.map(([base],i)=>`<option value="${i}">${esc(base)}</option>`).join("")}</select>
-  </label>
+  <nav class="pronunciation-pagination" aria-label="Páginas de verbos">
+   <button type="button" class="alt" data-page="-1" aria-label="Página anterior">Anterior</button>
+   <span class="muted" id="pronunciation-page" aria-live="polite"></span>
+   <button type="button" class="alt" data-page="1">Siguiente página</button>
+  </nav>
+  <div id="pronunciation-verb" class="pronunciation-list" role="group" aria-label="Verbos de esta página"></div>
   <div class="pronunciation-forms" aria-live="polite"></div>
   <div class="pronunciation-controls">
    <label class="pronunciation-speed"><input type="checkbox" id="pronunciation-slow">Escuchar más lento</label>
@@ -78,28 +83,58 @@ function stopPronunciation(){
  $("#pronunciation-audio")?.pause();
 }
 function setupPronunciation(){
- const select=$("#pronunciation-verb"),forms=$(".pronunciation-forms"),audio=$("#pronunciation-audio");
+ const list=$("#pronunciation-verb"),forms=$(".pronunciation-forms"),audio=$("#pronunciation-audio");
  const status=$(".pronunciation-status"),slow=$("#pronunciation-slow");
- const next=$("#pronunciation-next");
- let playback=0;
+ const next=$("#pronunciation-next"),pager=$(".pronunciation-pagination");
+ const pages=Math.ceil(VERBOS.length/VERBS_PER_PAGE);
+ let selected=0,page=-1,playback=0;
  function showForms(){
-  const last=select.selectedIndex===select.options.length-1;
+  const nextPage=Math.floor(selected/VERBS_PER_PAGE);
+  if(nextPage!==page){
+   page=nextPage;
+   const offset=page*VERBS_PER_PAGE;
+   list.innerHTML=VERBOS.slice(offset,offset+VERBS_PER_PAGE).map(([base],index)=>
+    `<button type="button" class="alt" lang="en" data-verb="${offset+index}">${esc(base)}</button>`
+   ).join("");
+   $("#pronunciation-page").textContent=`Página ${page+1} de ${pages}`;
+   pager.querySelector('[data-page="-1"]').disabled=page===0;
+   pager.querySelector('[data-page="1"]').disabled=page===pages-1;
+  }
+  for(const button of list.querySelectorAll("button")){
+   button.setAttribute("aria-pressed",String(Number(button.dataset.verb)===selected));
+  }
+  const last=selected===VERBOS.length-1;
   next.disabled=last;
   next.textContent=last?"Fin de la lista":"Siguiente";
   next.classList.toggle("alt",last);
   playback++;
   audio.pause();
   status.textContent="";
-  forms.innerHTML=VERBOS[select.value].map((word,i)=>`
-   <div class="pronunciation-form">
+  forms.innerHTML=VERBOS[selected].map((form,i)=>{
+   const words=verbFormWords(form);
+   return `<div class="pronunciation-form">
     <span class="muted">${pronunciationForms[i]}</span>
-    <strong lang="en">${esc(word)}</strong>
-    <button type="button" class="alt sm" data-form="${i}" aria-label="Escuchar ${pronunciationForms[i].toLowerCase()}">Escuchar</button>
-   </div>`).join("");
+    <strong lang="en">${esc(words.join(" / "))}</strong>
+    <div class="pronunciation-form-actions">${words.map((word,variant)=>
+     `<button type="button" class="alt sm" data-form="${i}" data-variant="${variant}" aria-label="Escuchar ${esc(word)}">Escuchar${words.length>1?` <span lang="en">${esc(word)}</span>`:""}</button>`
+    ).join("")}</div>
+   </div>`;
+  }).join("");
  }
- select.addEventListener("change",showForms);
+ list.addEventListener("click",event=>{
+  const button=event.target.closest("button[data-verb]");
+  if(!button)return;
+  selected=Number(button.dataset.verb);
+  showForms();
+ });
+ pager.addEventListener("click",event=>{
+  const button=event.target.closest("button[data-page]");
+  if(!button||button.disabled)return;
+  selected=(page+Number(button.dataset.page))*VERBS_PER_PAGE;
+  showForms();
+ });
  next.addEventListener("click",()=>{
-  select.selectedIndex++;
+  selected++;
   showForms();
  });
  function updateSpeed(){audio.playbackRate=slow.checked ? 0.75 : 1}
@@ -108,7 +143,8 @@ function setupPronunciation(){
  forms.addEventListener("click",async event=>{
   const button=event.target.closest("button[data-form]");
   if(!button)return;
-  const request=++playback,form=Number(button.dataset.form),word=VERBOS[select.value][form];
+  const request=++playback,form=Number(button.dataset.form);
+  const word=verbFormWords(VERBOS[selected][form])[Number(button.dataset.variant)];
   audio.src=verbAudioPath(word,form!==0);
   updateSpeed();
   status.textContent=`Reproduciendo: ${word}`;
@@ -154,16 +190,21 @@ function home(){
   </section>
   <form id="practice" onsubmit="event.preventDefault();start()">
    ${SRC?"":'<p class="notice">Tu navegador no tiene reconocimiento de voz. Puedes responder en voz alta y tocar “Ver respuesta”.</p>'}
-   <div class="setup">
-    <section class="box">
-     <h2>Modo de práctica</h2>
-     <div class="modes">${modeOptions(modes,true)}</div>
-     <div class="lesson-settings">
-      <h3>Práctica de verbos</h3>
-      <div class="modes">${modeOptions(Object.entries(VERB_MODES).map(([mode,config])=>[
-       mode,config.title,`${VERBOS.length} verbos. ${config.instruction}`
-      ]))}</div>
-     </div>
+   <section class="box setup">
+    <div class="practice-tabs" id="practice-tabs" role="tablist" aria-label="Tipo de práctica">
+     <button type="button" class="alt" role="tab" id="practice-modes-tab" aria-controls="practice-modes" aria-selected="true">Modo de práctica</button>
+     <button type="button" class="alt" role="tab" id="verb-modes-tab" aria-controls="verb-modes" aria-selected="false" tabindex="-1">Práctica de verbos</button>
+    </div>
+    <div class="modes" id="practice-modes" role="tabpanel" aria-labelledby="practice-modes-tab">
+     ${modeOptions(modes,true)}
+    </div>
+    <div class="modes" id="verb-modes" role="tabpanel" aria-labelledby="verb-modes-tab" hidden>
+     ${modeOptions(Object.entries(VERB_MODES).map(([mode,config])=>[
+      mode,config.title,`${VERBOS.length} verbos. ${config.instruction}`
+     ]))}
+    </div>
+    <section class="session-settings" id="session-settings" aria-labelledby="settings-title">
+     <h2 id="settings-title">Ajustes de sesión</h2>
      <div class="lesson-settings" id="lessons" hidden>
       <h3>Lecciones y repasos</h3>
       <div class="chips">${LK.map((k,i)=>`<label><input type="checkbox" class="lc" value="${esc(k)}" ${i?"":"checked"}>${esc(k)}</label>`).join("")}</div>
@@ -172,14 +213,13 @@ function home(){
        <button type="button" class="alt sm" onclick="document.querySelectorAll('.lc').forEach(x=>x.checked=false)">Ninguna</button>
       </div>
      </div>
-    </section>
-    <section class="box">
-     <h2>Ajustes de sesión</h2>
      <div class="language-grid" id="language-settings">
       <label class="field">Pregunta en<select id="ql"><option value="es">Español</option><option value="en">Inglés</option></select></label>
       <label class="field">Mi respuesta en<select id="al"><option value="en">Inglés</option><option value="es">Español</option></select></label>
      </div>
-     <p class="muted" id="verb-language" hidden>Escucha y responde en inglés.</p>
+     <label class="field" id="verb-count-setting" hidden>Verbos al azar
+      <select id="verb-count"><option value="10">10 verbos</option><option value="20" selected>20 verbos</option></select>
+     </label>
      <label class="field speed" for="spd"><span>Velocidad de la voz <output id="speed-value" for="spd">1×</output></span></label>
      <input type="range" id="spd" min="0.6" max="1.4" step="0.05" value="1">
      <div class="options">
@@ -189,20 +229,54 @@ function home(){
      <p class="notice" id="msg" role="alert" hidden></p>
      <button class="primary-action" type="submit">Empezar práctica</button>
     </section>
-   </div>
+   </section>
   </form>`;
  $("#spd").addEventListener("input",e=>{$("#speed-value").textContent=e.target.value+"×"});
- for(const radio of document.querySelectorAll("input[name=mode]")){
-  radio.addEventListener("change",e=>{
-   const mode=e.target.value;
-   $("#lessons").hidden=mode!=="lesson";
-   const verbMode=Boolean(VERB_MODES[mode]);
-   $("#language-settings").hidden=verbMode;
-   $("#verb-language").hidden=!verbMode;
-   $("#random-setting").hidden=!verbMode&&mode!=="lesson"&&mode!=="free";
-   $("#msg").hidden=true;
+ setupModeSettings();
+}
+function setupModeSettings(){
+ const form=$("#practice"),settings=$("#session-settings");
+ const tabs=[...form.querySelectorAll('[role="tab"]')];
+ const panels=tabs.map(tab=>document.getElementById(tab.getAttribute("aria-controls")));
+ function selectMode(radio){
+  const panel=radio.closest('[role="tabpanel"]'),mode=radio.value;
+  panel.dataset.selectedMode=mode;
+  tabs.forEach((tab,index)=>{
+   const active=panels[index]===panel;
+   panels[index].hidden=!active;
+   tab.setAttribute("aria-selected",String(active));
+   tab.tabIndex=active?0:-1;
   });
+  radio.parentElement.after(settings);
+  const isVerb=Boolean(VERB_MODES[mode]);
+  $("#lessons").hidden=mode!=="lesson";
+  $("#language-settings").hidden=isVerb;
+  $("#verb-count-setting").hidden=!isVerb;
+  $("#random-setting").hidden=mode!=="lesson"&&mode!=="free";
+  $("#msg").hidden=true;
  }
+ function selectTab(index){
+  const panel=panels[index];
+  const radios=[...panel.querySelectorAll('input[name="mode"]')];
+  const radio=radios.find(option=>option.value===panel.dataset.selectedMode)||radios[0];
+  radio.checked=true;
+  selectMode(radio);
+ }
+ tabs.forEach((tab,index)=>tab.addEventListener("click",()=>selectTab(index)));
+ $("#practice-tabs").addEventListener("keydown",event=>{
+  const index=tabs.indexOf(event.target);
+  if(index<0)return;
+  const keys={ArrowLeft:(index+tabs.length-1)%tabs.length,ArrowRight:(index+1)%tabs.length,Home:0,End:tabs.length-1};
+  const target=keys[event.key];
+  if(!Number.isInteger(target))return;
+  event.preventDefault();
+  selectTab(target);
+  tabs[target].focus();
+ });
+ form.addEventListener("change",event=>{
+  if(event.target.name==="mode")selectMode(event.target);
+ });
+ selectMode(form.querySelector('input[name="mode"]:checked'));
 }
 async function start(){
  const mode=document.querySelector("input[name=mode]:checked").value,chosen=[...document.querySelectorAll(".lc:checked")].map(x=>x.value);
@@ -217,7 +291,7 @@ async function start(){
  S.qlang=S.verbMode?"en":$("#ql").value;
  S.alang=S.verbMode?"en":$("#al").value;
  S.speed=+$("#spd").value;S.showEach=$("#shw").checked;
- S.items=build(mode,chosen,$("#rnd").checked);S.i=0;S.log=[];S.st={ans:0,skip:0,rep:0,secs:[]};S.run=true;
+ S.items=build(mode,chosen,$("#rnd").checked,Number($("#verb-count").value));S.i=0;S.log=[];S.st={ans:0,skip:0,rep:0,secs:[]};S.run=true;
  keepScreenAwake(S.items);
  try{speechSynthesis.getVoices()}catch(e){}
  setScreenHistory("#sesion");
@@ -268,7 +342,7 @@ function reviewPrompt(it){
  if(it.kind==="verb")return `<p class="go">${esc(it.n)} · Forma base: <span lang="en">${esc(it.base)}</span></p>`;
  return `<p class="go">${esc(it.n)} ${esc(it.es)}</p><p class="en">${esc(it.en)}</p>`;
 }
-const verbVocabulary=new Set(VERBOS.flat());
+const verbVocabulary=new Set(VERBOS.flat().flatMap(verbFormWords));
 const verbHomophones={
  ate:"eight",
  knew:"new",
@@ -284,10 +358,10 @@ function verbFromTranscript(text){
 }
 function verbRecognitionNote(text,expected,alternatives){
  const heard=verbFromTranscript(text);
- if(heard===expected)return "";
- if(verbHomophones[expected]===heard){
-  return `«${heard}» y «${expected}» suenan igual en inglés americano.`;
- }
+ const accepted=verbFormWords(expected);
+ if(accepted.includes(heard))return "";
+ const homophone=accepted.find(word=>verbHomophones[word]===heard);
+ if(homophone)return `«${heard}» y «${homophone}» suenan igual en inglés americano.`;
  const candidates=[...new Set(alternatives.map(verbFromTranscript))]
   .filter(word=>word!==heard&&verbVocabulary.has(word));
  if(candidates.length){
@@ -299,9 +373,12 @@ function showRv(e){
  const review=$("#rv");
  if(!review)return;
  const isVerb=e.it.kind==="verb";
- const modelAnswer=isVerb?`<dd class="review-model"><span lang="en">${esc(e.model)}</span>
-  <button type="button" class="alt" aria-label="Escuchar la respuesta modelo">Escuchar</button>
-  <audio preload="none" src="${verbAudioPath(e.model,true)}"></audio></dd>`:`<dd>${esc(e.model)}</dd>`;
+ const words=isVerb?verbFormWords(e.model):[];
+ const modelAnswer=isVerb?`<dd class="review-model"><span lang="en">${esc(words.join(" / "))}</span>
+  <span class="review-model-actions">${words.map((word,i)=>
+   `<button type="button" class="alt" data-model="${i}" aria-label="Escuchar ${esc(word)}">Escuchar${words.length>1?` <span lang="en">${esc(word)}</span>`:""}</button>`
+  ).join("")}</span>
+  <audio preload="none" src="${verbAudioPath(words[0],true)}"></audio></dd>`:`<dd>${esc(e.model)}</dd>`;
  $("#orb").hidden=true;
  $("#timer").hidden=true;
  review.innerHTML=`
@@ -313,8 +390,12 @@ function showRv(e){
  review.hidden=false;
  const audio=review.querySelector("audio");
  if(audio){
-  review.querySelector("button").addEventListener("click",async()=>{
+  review.querySelector(".review-model-actions").addEventListener("click",async event=>{
+   const button=event.target.closest("button[data-model]");
+   if(!button)return;
    warn("");
+   const file=verbAudioPath(words[Number(button.dataset.model)],true);
+   if(audio.getAttribute("src")!==file)audio.src=file;
    audio.currentTime=0;
    try{await audio.play()}
    catch(error){if(audio.isConnected&&!review.hidden)warn("No se pudo reproducir la respuesta modelo.")}
@@ -368,7 +449,7 @@ function renderSummary({stats:s,entries,verbMode}){
   <dl class="stats">${stats.map(([label,value])=>`<div class="box"><dt>${label}</dt><dd>${value}</dd></div>`).join("")}</dl>
   <section class="box"><h2>${verbMode?verbMode.title:"Repaso de preguntas"}</h2>
    ${entries.length?entries.map(e=>`<div class="item">${reviewPrompt(e.it)}<dl class="comparison"><div><dt>Tu respuesta</dt><dd>${esc(e.ans)}</dd></div>
-     <div><dt>Respuesta modelo</dt><dd>${esc(e.model)}</dd></div></dl></div>`).join(""):"<p>No hubo respuestas en esta sesión.</p>"}
+     <div><dt>Respuesta modelo</dt><dd>${esc(e.it.kind==="verb"?verbFormWords(e.model).join(" / "):e.model)}</dd></div></dl></div>`).join(""):"<p>No hubo respuestas en esta sesión.</p>"}
   </section>`;
  focusScreen();
 }

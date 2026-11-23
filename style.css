@@ -178,7 +178,23 @@ button:hover, .button:hover { background: var(--control-hover); }
 #practice { margin-top: 1.25rem; scroll-margin-top: 1rem; }
 .pronunciation { max-width: 36rem; margin-inline: auto; }
 .pronunciation h1 { margin-bottom: .4rem; font-size: clamp(1.6rem, 4vw, 2.2rem); }
-.pronunciation .field { margin-top: 1rem; }
+.pronunciation-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .4rem;
+  margin-block: 1rem .6rem;
+}
+.pronunciation-pagination button { padding-inline: .55rem; font-size: .85rem; }
+.pronunciation-pagination button:disabled { opacity: .5; cursor: default; }
+.pronunciation-list { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .4rem; }
+.pronunciation-list button { min-width: 0; padding-inline: .2rem; overflow-wrap: anywhere; }
+.pronunciation-list button[aria-pressed="true"] {
+  color: var(--blue);
+  border-color: var(--selected);
+  background: var(--soft);
+}
 .pronunciation-forms { display: grid; gap: .55rem; margin-block: .75rem; }
 .pronunciation-form {
   display: grid;
@@ -193,12 +209,44 @@ button:hover, .button:hover { background: var(--control-hover); }
 }
 .pronunciation-form .muted { grid-area: label; font-size: .78rem; }
 .pronunciation-form strong { grid-area: word; overflow-wrap: anywhere; }
-.pronunciation-form button { grid-area: button; }
+.pronunciation-form-actions {
+  grid-area: button;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .35rem;
+}
+.pronunciation-form-actions button { gap: .3rem; }
 .pronunciation-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .65rem; }
 .pronunciation-speed { display: flex; align-items: center; gap: .4rem; font-size: .9rem; }
 .pronunciation-status { margin-top: .55rem; }
 .pronunciation-status:empty { display: none; }
-.setup { display: grid; grid-template-columns: 1.1fr 1fr; gap: 1.25rem; align-items: start; }
+.setup { max-width: 46rem; margin-inline: auto; }
+.practice-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .45rem;
+  margin-bottom: .9rem;
+  padding: .25rem;
+  border: 1px solid var(--line);
+  border-radius: .8rem;
+  background: var(--soft);
+}
+.practice-tabs button { min-width: 0; padding-inline: .45rem; background: transparent; }
+.practice-tabs button[aria-selected="true"] {
+  color: var(--navy);
+  border-color: var(--selected);
+  background: var(--surface);
+}
+.session-settings {
+  min-width: 0;
+  margin-bottom: .35rem;
+  padding: clamp(.85rem, 3vw, 1.2rem);
+  border: 1px solid var(--line);
+  border-radius: .75rem;
+  background: var(--review);
+}
+.session-settings .lesson-settings { margin: 0 0 1rem; }
 .box {
   min-width: 0;
   padding: clamp(1.1rem, 3vw, 1.65rem);
@@ -312,7 +360,8 @@ button:hover, .button:hover { background: var(--control-hover); }
 .comparison div { min-width: 0; border-radius: .6rem; padding: .75rem; background: var(--tint); overflow-wrap: anywhere; }
 .comparison dt { font-size: .85rem; font-weight: 700; color: var(--blue); margin-bottom: .2rem; }
 .review-model { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; }
-.review-model button { margin-left: auto; padding-inline: .65rem; }
+.review-model-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: .35rem; }
+.review-model button { padding-inline: .65rem; gap: .3rem; }
 .page-heading { margin-bottom: 1.2rem; }
 .page-heading h1 { font-size: clamp(1.9rem, 5vw, 3rem); letter-spacing: -.04em; }
 .page-heading p { color: var(--muted); margin-top: .45rem; }
@@ -386,7 +435,7 @@ button:hover, .button:hover { background: var(--control-hover); }
   .hero-art { width: 100%; }
   .hero-art .wave { height: clamp(1rem, 5vw, 2.2rem); gap: 3px; }
   .hero-art .wave i { width: 3px; }
-  .setup, .catalog { grid-template-columns: 1fr; }
+  .catalog { grid-template-columns: 1fr; }
 }
 @media (max-width: 30rem) {
   .wrap { width: calc(100% - 1.5rem); }
@@ -423,7 +472,8 @@ button:hover, .button:hover { background: var(--control-hover); }
   .hero .row > * { padding-inline: .45rem; font-size: .88rem; }
   .hero-art { display: none; }
   #practice { margin-top: .75rem; }
-  .setup, .catalog { gap: .75rem; }
+  .catalog { gap: .75rem; }
+  .practice-tabs button { font-size: .86rem; }
   .box { padding: 1rem; }
   .field select { min-height: 2.75rem; font-size: 1rem; }
   .mode { min-height: 3.2rem; }
@@ -435,9 +485,11 @@ button:hover, .button:hover { background: var(--control-hover); }
   #orb .wave { height: 2.4rem; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
   .comparison { grid-template-columns: 1fr; }
+  .pronunciation-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .pronunciation-form button { min-height: 2.75rem; }
 }
 
 @media (max-width: 22rem) {
   .hero .row { grid-template-columns: 1fr; }
+  .pronunciation-pagination { justify-content: center; }
 }
