@@ -345,7 +345,8 @@ button:hover, .button:hover { background: var(--control-hover); }
 .timer { margin-top: .4rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .session-nav { margin-block: 1.3rem .65rem; }
 .session-nav button { flex: 1 1 auto; }
-.session-end { margin-top: .55rem; }
+.session-tools { display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem; margin-top: .55rem; }
+#session-next:disabled { opacity: .55; cursor: default; }
 .review {
   margin-top: 1rem;
   padding: 1rem;
