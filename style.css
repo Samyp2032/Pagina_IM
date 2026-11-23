@@ -270,6 +270,15 @@ button:hover, .button:hover { background: var(--control-hover); }
 
 .session { max-width: 40rem; margin-inline: auto; text-align: center; }
 .cnt { color: var(--blue); font-size: .95rem; font-weight: 700; }
+.verb-cue {
+  max-width: 32rem;
+  margin: .4rem auto 0;
+  font-size: clamp(1.4rem, 4.5vw, 1.9rem);
+  font-weight: 750;
+  line-height: 1.18;
+  text-wrap: balance;
+}
+.verb-cue strong { color: var(--blue); white-space: nowrap; }
 #orb {
   display: grid;
   place-items: center;
@@ -302,6 +311,8 @@ button:hover, .button:hover { background: var(--control-hover); }
 .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: .65rem; margin-block: .75rem; }
 .comparison div { min-width: 0; border-radius: .6rem; padding: .75rem; background: var(--tint); overflow-wrap: anywhere; }
 .comparison dt { font-size: .85rem; font-weight: 700; color: var(--blue); margin-bottom: .2rem; }
+.review-model { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; }
+.review-model button { margin-left: auto; padding-inline: .65rem; }
 .page-heading { margin-bottom: 1.2rem; }
 .page-heading h1 { font-size: clamp(1.9rem, 5vw, 3rem); letter-spacing: -.04em; }
 .page-heading p { color: var(--muted); margin-top: .45rem; }

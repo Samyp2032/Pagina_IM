@@ -6,13 +6,13 @@ const REVK=Object.keys(D.reviews).map(t=>"Review "+t),LK=Object.keys(D.lessons).
 const EXP={es:"Amplía tu respuesta con detalles.",en:"Please expand your answer with details."};
 const SHORT={es:"Tu respuesta fue muy corta. Intenta ampliarla.",en:"Your answer was too short. Try to expand it."};
 const PRE={es:"Parte dos: Review and Check.",en:"Part two: Review and Check."};
-const SIL=2.5,MAX=120,MINX=15;
+const SIL=2500,VERB_SILENCE=2000,MAX=120,MINX=15;
 const SRC=window.SpeechRecognition||window.webkitSpeechRecognition;
 const VERB_MODES={
- past:{title:"Pasado simple",form:1,instruction:"Di el verbo en pasado simple."},
- participle:{title:"Participio pasado",form:2,instruction:"Di solo el participio pasado."}
+ past:{title:"Pasado simple",form:1,instruction:"Di el verbo en pasado simple.",phrase:"Yesterday I",answerForm:"el verbo en pasado"},
+ participle:{title:"Participio pasado",form:2,instruction:"Di el participio pasado.",phrase:"I have",answerForm:"el participio pasado"}
 };
-const S={screenLock:null,micTrack:null,micError:"",legacyMicUsed:false,verbMode:null,speed:1,qlang:"es",alang:"en",showEach:true,items:[],i:0,log:[],st:null,abort:null,run:false};
+const S={voiceContext:null,voiceMeter:null,screenLock:null,micTrack:null,micError:"",legacyMicUsed:false,verbMode:null,speed:1,qlang:"es",alang:"en",showEach:true,items:[],i:0,log:[],st:null,abort:null,run:false};
 const fmt=s=>String(s/60|0).padStart(2,"0")+":"+String(s%60|0).padStart(2,"0");
 const mk=(n,l,es,en,kind="q",ord=0)=>({n,l,es,en,kind,ord});
 const shuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
@@ -53,6 +53,9 @@ function modeOptions(modes,checkFirst=false){
   <label class="mode"><input type="radio" name="mode" value="${value}" ${checkFirst&&i===0?"checked":""}>
    <span><strong>${title}</strong><small>${detail}</small></span>
   </label>`).join("");
+}
+function verbAudioPath(word,inflected=false){
+ return `audio_verbos/${inflected?"formas/":""}${encodeURIComponent(word)}.wav`;
 }
 const pronunciationForms=["Forma base","Pasado simple","Participio pasado"];
 function pronunciationPanel(){
@@ -106,7 +109,7 @@ function setupPronunciation(){
   const button=event.target.closest("button[data-form]");
   if(!button)return;
   const request=++playback,form=Number(button.dataset.form),word=VERBOS[select.value][form];
-  audio.src=`audio_verbos/${form?"formas/":""}${encodeURIComponent(word)}.wav`;
+  audio.src=verbAudioPath(word,form!==0);
   updateSpeed();
   status.textContent=`Reproduciendo: ${word}`;
   try{await audio.play()}
@@ -219,6 +222,7 @@ async function start(){
  try{speechSynthesis.getVoices()}catch(e){}
  setScreenHistory("#sesion");
  session();
+ if(S.verbMode&&SRC&&supportsRecognitionTrack())prepareVoiceMeter();
  await beginPractice(S.verbMode?null:loadManifest());
 }
 function focusScreen(){
@@ -228,7 +232,7 @@ function focusScreen(){
 function session(){
  A.innerHTML=`<section class="box session">
   <div class="cnt" id="cnt"></div>
-  ${S.verbMode?`<p class="muted">${S.verbMode.instruction}</p>`:""}
+  ${S.verbMode?`<p class="verb-cue">Di <strong lang="en">${S.verbMode.phrase}</strong> + ${S.verbMode.answerForm}</p>`:""}
   <div id="orb" aria-hidden="true">${waveform}</div>
   <h1 class="state" role="status" id="st">Preparando la práctica</h1>
   <div class="timer" id="timer">00:00</div>
@@ -251,7 +255,7 @@ function sessionAction(label,action){
  next.dataset.action=action;
  next.classList.toggle("alt",action==="next");
 }
-const LBL={speaking:"Escucha la pregunta",listening:"Responde en voz alta",hearing:"Escuchando tu respuesta",preparing:"Preparando la escucha",review:"Repaso",waiting:"En espera"};
+const LBL={speaking:"Escucha la pregunta",listening:"Responde en voz alta",hearing:"Escuchando tu respuesta",preparing:"Preparando la escucha",processing:"Procesando respuesta",review:"Repaso",waiting:"En espera"};
 function setState(n){
  const o=$("#orb"),s=$("#st");if(!o)return;
  o.className="o-"+n;
@@ -264,12 +268,60 @@ function reviewPrompt(it){
  if(it.kind==="verb")return `<p class="go">${esc(it.n)} · Forma base: <span lang="en">${esc(it.base)}</span></p>`;
  return `<p class="go">${esc(it.n)} ${esc(it.es)}</p><p class="en">${esc(it.en)}</p>`;
 }
-function showRv(e){const r=$("#rv");if(!r)return;$("#orb").hidden=true;$("#timer").hidden=true;
- r.innerHTML=`
+const verbVocabulary=new Set(VERBOS.flat());
+const verbHomophones={
+ ate:"eight",
+ knew:"new",
+ made:"maid",
+ seen:"scene"
+};
+function verbRetryExample(){
+ return `${S.verbMode.phrase} …`;
+}
+function verbFromTranscript(text){
+ return text.trim().toLowerCase().replace(/[.!?,:]+$/g,"")
+  .replace(/^(?:yesterday[,]?\s+i|i\s+(?:have|said)|i['’]ve)[,:]?\s+/,"").trim();
+}
+function verbRecognitionNote(text,expected,alternatives){
+ const heard=verbFromTranscript(text);
+ if(heard===expected)return "";
+ if(verbHomophones[expected]===heard){
+  return `«${heard}» y «${expected}» suenan igual en inglés americano.`;
+ }
+ const candidates=[...new Set(alternatives.map(verbFromTranscript))]
+  .filter(word=>word!==heard&&verbVocabulary.has(word));
+ if(candidates.length){
+  return `Otras opciones del navegador: ${candidates.map(word=>`«${word}»`).join(", ")}.`;
+ }
+ return `Para reintentar, di tu respuesta en «${verbRetryExample()}».`;
+}
+function showRv(e){
+ const review=$("#rv");
+ if(!review)return;
+ const isVerb=e.it.kind==="verb";
+ const modelAnswer=isVerb?`<dd class="review-model"><span lang="en">${esc(e.model)}</span>
+  <button type="button" class="alt" aria-label="Escuchar la respuesta modelo">Escuchar</button>
+  <audio preload="none" src="${verbAudioPath(e.model,true)}"></audio></dd>`:`<dd>${esc(e.model)}</dd>`;
+ $("#orb").hidden=true;
+ $("#timer").hidden=true;
+ review.innerHTML=`
   ${reviewPrompt(e.it)}
   <dl class="comparison"><div><dt>Tu respuesta</dt><dd>${esc(e.ans)}</dd></div>
-   <div><dt>Respuesta modelo</dt><dd>${esc(e.model)}</dd></div></dl>
-  <p class="muted">${S.verbMode?"Tiempo para responder":"Duración"}: ${e.secs.toFixed(1)} s</p>`;r.hidden=false}
+   <div><dt>Respuesta modelo</dt>${modelAnswer}</div></dl>
+  ${e.recognitionNote?`<p class="muted">${esc(e.recognitionNote)}</p>`:""}
+  <p class="muted">${S.verbMode?"Tiempo para responder":"Duración"}: ${e.secs.toFixed(1)} s</p>`;
+ review.hidden=false;
+ const audio=review.querySelector("audio");
+ if(audio){
+  review.querySelector("button").addEventListener("click",async()=>{
+   warn("");
+   audio.currentTime=0;
+   try{await audio.play()}
+   catch(error){if(audio.isConnected&&!review.hidden)warn("No se pudo reproducir la respuesta modelo.")}
+  });
+ }
+ return audio;
+}
 function hideRv(){const r=$("#rv");if(r)r.hidden=true;const o=$("#orb"),t=$("#timer");if(o){o.hidden=false;t.hidden=false}}
 function leavePractice(){
  if(!S.run)return;
@@ -417,7 +469,35 @@ async function keepScreenAwake(items){
   else await lock.release();
  }catch(e){}
 }
+function prepareVoiceMeter(){
+ try{
+  S.voiceContext=new AudioContext();
+  S.voiceContext.resume().catch(()=>{});
+ }catch(e){}
+}
+function connectVoiceMeter(stream){
+ const context=S.voiceContext;
+ if(!context)return;
+ try{
+  const analyser=context.createAnalyser();
+  const input=context.createMediaStreamSource(stream);
+  analyser.fftSize=1024;
+  input.connect(analyser);
+  const samples=new Float32Array(analyser.fftSize);
+  // Mide el nivel de entrada sin reproducir ni guardar el micrófono.
+  S.voiceMeter=()=>{
+   if(context.state!=="running")return null;
+   analyser.getFloatTimeDomainData(samples);
+   const power=samples.reduce((sum,sample)=>sum+sample*sample,0)/samples.length;
+   return power>=0.000144;
+  };
+ }catch(e){}
+}
 function releasePracticeResources(){
+ const context=S.voiceContext;
+ S.voiceContext=null;
+ S.voiceMeter=null;
+ if(context&&context.state!=="closed")context.close().catch(()=>{});
  S.micTrack?.stop();
  S.micTrack=null;
  const lock=S.screenLock;
@@ -448,13 +528,18 @@ async function beginPractice(ready){
  if(SRC&&navigator.mediaDevices?.getUserMedia&&supportsRecognitionTrack()){
   $("#st").textContent="Preparando el micrófono";
   try{
-   const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+   const stream=await navigator.mediaDevices.getUserMedia({audio:{
+    echoCancellation:{ideal:true},
+    noiseSuppression:{ideal:true},
+    autoGainControl:{ideal:true}
+   }});
    if(cancelled){
     stream.getTracks().forEach(track=>track.stop());
     return;
    }
    S.micTrack=stream.getAudioTracks()[0];
    S.micTrack.enabled=false;
+   connectVoiceMeter(stream);
   }catch(error){
    if(cancelled)return;
    S.micError=error.name==="NotAllowedError"?micErrors["not-allowed"]:micErrors["audio-capture"];
@@ -467,15 +552,18 @@ async function beginPractice(ready){
 }
 
 function listen(ns=20,singleWord=false){return new Promise(res=>{
- const t0=Date.now(),track=S.micTrack,timer=$("#timer");
+ const t0=Date.now(),track=S.micTrack,timer=$("#timer"),voiceMeter=S.voiceMeter;
+ const silence=singleWord?VERB_SILENCE:SIL;
  if(timer&&timer.textContent!=="00:00")timer.textContent="00:00";
  let displayedSeconds=0;
+ let alternatives=[],voiceActive=false,voiceMeasured=false,finishing=false,finalTimer;
  let base="",cur="",vs=0,last=0,readyAt=0,over=false,rec=null,tm=0,manual=!SRC,retrying=false;
  setState("preparing");
  const txt=()=>(base+cur).trim();
  const stopRecognition=()=>{
   if(!rec)return;
-  rec.onaudiostart=rec.onresult=rec.onnomatch=rec.onend=rec.onerror=null;
+  rec.onaudiostart=rec.onspeechstart=rec.onspeechend=null;
+  rec.onresult=rec.onnomatch=rec.onend=rec.onerror=null;
   try{rec.abort()}catch(e){}
   if(track)track.enabled=false;
  };
@@ -483,14 +571,27 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
   if(over)return;
   over=true;
   clearInterval(tm);
+  clearTimeout(finalTimer);
   S.abort=null;
   stopRecognition();
   res(result);
  };
  const done=()=>{
-  if(singleWord)return end({text:txt(),secs:vs?(last-(readyAt||t0))/1000:0,manual});
+  if(singleWord)return end({text:txt(),secs:vs?(last-(readyAt||t0))/1000:0,manual,alternatives});
   end({text:txt(),secs:vs?(last-vs)/1000:0,manual});
  };
+ function markVoice(now){
+  if(!vs){vs=now;setState("hearing")}
+  last=now;
+ }
+ function finishAnswer(){
+  if(finishing)return;
+  if(!singleWord||!rec||manual)return done();
+  finishing=true;
+  setState("processing");
+  finalTimer=setTimeout(done,1200);
+  try{rec.stop()}catch(e){done()}
+ }
  function waitForManualFinish(message){
   manual=true;
   stopRecognition();
@@ -499,7 +600,7 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
   sessionAction("Ver respuesta","finish");
   warn(message+" Responde en voz alta y pulsa «Ver respuesta» para ver la solución.");
  }
- S.abort=action=>action==="finish"?done():end({cmd:action});
+ S.abort=action=>action==="finish"?finishAnswer():end({cmd:action});
  tm=setInterval(()=>{
   const now=Date.now();
   if(timer&&readyAt){
@@ -509,45 +610,63 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
     timer.textContent=fmt(seconds);
    }
   }
-  if(now-t0>MAX*1000)return done();
+  if(finishing)return;
+  if(now-t0>MAX*1000)return finishAnswer();
   if(manual)return;
   if(!readyAt){
    if(now-t0>ns*1000)waitForManualFinish("El reconocimiento de voz no se inició.");
    return;
   }
-  if(vs&&now-last>SIL*1000)done();
-  else if(!vs&&now-readyAt>ns*1000)done();
- },200);
+  if(singleWord&&(voiceMeter?.()??voiceActive)){
+   voiceMeasured=true;
+   markVoice(now);
+  }
+  if(vs&&now-last>=silence)finishAnswer();
+  else if(!vs&&now-readyAt>=ns*1000)finishAnswer();
+ },singleWord?50:200);
 
  if(S.micError)return waitForManualFinish(S.micError);
  if(!SRC)return waitForManualFinish("Este navegador no tiene reconocimiento de voz.");
 
  rec=new SRC();
  rec.lang=S.alang==="es"?"es-MX":"en-US";
- rec.continuous=!singleWord;
+ rec.continuous=true;
  rec.interimResults=true;
+ if(singleWord)rec.maxAlternatives=5;
  rec.onaudiostart=()=>{
   if(!readyAt)readyAt=Date.now();
-  setState("listening");
-  if(retrying)warn("No se entendió la palabra. Dila otra vez.");
+  if(!vs)setState("listening");
+  if(retrying)warn(`No se entendió la palabra. Dila otra vez o prueba «${verbRetryExample()}».`);
  };
+ if(singleWord){
+  rec.onspeechstart=()=>{voiceActive=true};
+  rec.onspeechend=()=>{
+   voiceActive=false;
+   if(!finishing&&voiceMeter?.()==null)markVoice(Date.now());
+  };
+ }
  rec.onnomatch=()=>{if(singleWord)retrying=true};
  rec.onresult=event=>{
-  cur=Array.from(event.results,result=>result[0].transcript).join(" ");
-  if(!cur.trim())return;
+  const results=Array.from(event.results);
+  cur=results.map(result=>result[0].transcript.trim()).join(" ");
+  if(!cur)return;
+  if(singleWord){
+   const preceding=[base.trim(),...results.slice(0,-1).map(result=>result[0].transcript.trim())].filter(Boolean);
+   alternatives=Array.from(results.at(-1)).slice(1).map(answer=>answer.transcript.trim())
+    .filter(Boolean).map(answer=>[...preceding,answer].join(" "));
+  }
   if(retrying){
    retrying=false;
    warn("");
   }
-  if(!vs){vs=Date.now();setState("hearing")}
-  last=Date.now();
-  if(singleWord&&event.results[event.results.length-1].isFinal)done();
+  if(!finishing&&(!singleWord||!voiceMeasured))markVoice(Date.now());
  };
  rec.onerror=event=>{
   if(singleWord&&event.error==="no-speech")retrying=true;
   const message=micErrors[event.error];
   if(!message)return;
   S.micError=message;
+  if(finishing)return done();
   waitForManualFinish(message);
  };
 
@@ -566,7 +685,7 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
    if(S.legacyMicUsed){
     let permission;
     try{permission=await navigator.permissions?.query({name:"microphone"})}catch(e){}
-    if(over||manual)return;
+    if(over||manual||finishing)return;
     if(permission?.state!=="granted"){
      S.micError="Este navegador no conservó el permiso del micrófono.";
      return waitForManualFinish(S.micError);
@@ -581,10 +700,10 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
  }
  rec.onend=()=>{
   if(over||manual)return;
-  // Si el navegador solo devolvió una transcripción provisional, úsala para el verbo.
-  if(singleWord&&txt())return done();
-  if(retrying)setState("preparing");
-  base+=cur+" ";
+  voiceActive=false;
+  if(finishing)return done();
+  if(retrying&&!vs)setState("preparing");
+  if(cur)base+=cur+" ";
   cur="";
   startRecognition();
  };
@@ -624,7 +743,7 @@ async function runItem(it,items){
  const isVerb=it.kind==="verb";
  warn("");
  const parts=[];if(it.pre)parts.push(it.pre[S.qlang]);parts.push(isVerb?it.base:it[S.qlang]);if(it.kind=="expand")parts.push(EXP[S.qlang]);
- const file=isVerb?`audio_verbos/${it.base}.wav`:undefined;
+ const file=isVerb?verbAudioPath(it.base):undefined;
  setState("speaking");let c;
  for(const t of parts){
   c=await speak(t,S.qlang,file);
@@ -652,11 +771,15 @@ async function runItem(it,items){
   manual=r2.manual;
  }
  const counted=Boolean(text);if(counted){S.st.ans++;S.st.secs.push(secs)}
- S.log.push({it,ans:text||(isVerb?"Sin transcripción":"[sin respuesta]"),secs,model:model(it)});
- if(S.showEach||manual){
+ const example=model(it);
+ const recognitionNote=isVerb?verbRecognitionNote(text,example,r.alternatives||[]):"";
+ S.log.push({it,ans:text||(isVerb?"Sin transcripción":"[sin respuesta]"),secs,model:example,recognitionNote});
+ if(S.showEach||manual||(isVerb&&!text)){
   warn("");
-  setState("review");showRv(S.log[S.log.length-1]);
+  setState("review");
+  const reviewAudio=showRv(S.log[S.log.length-1]);
   const c2=await new Promise(res=>{S.abort=k=>{S.abort=null;res(k=="finish"||k=="next"?"advance":k)}});
+  reviewAudio?.pause();
   if(!isCurrentPractice(items))return;
   hideRv();
   if(c2=="repeat"){S.log.pop();if(counted){S.st.ans--;S.st.secs.pop()}}
