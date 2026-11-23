@@ -113,7 +113,6 @@ function showPronunciation(record=true){
  if($("#pronunciation-verb"))return;
  leavePractice();
  if(record)setScreenHistory("#pronunciacion");
- $("#back").hidden=false;
  $("#open-pronunciation").setAttribute("aria-current","page");
  A.innerHTML=pronunciationPanel();
  setupPronunciation();
@@ -122,7 +121,6 @@ function showPronunciation(record=true){
 function home(){
  stopPronunciation();
  $("#open-pronunciation").removeAttribute("aria-current");
- $("#back").hidden=true;
  releaseMicrophone();
  S.run=false;try{speechSynthesis.cancel()}catch(e){}if(P.stop)P.stop();
  const modes=[
@@ -135,7 +133,7 @@ function home(){
  A.innerHTML=`
   <section class="hero">
    <div class="hero-copy">
-    <h1>Simulador de<br>examen oral</h1>
+    <h1>Simulador de <br>examen oral</h1>
     <p>Escucha cada pregunta, responde en voz alta y compara tu respuesta con un ejemplo.</p>
     <div class="row">
      <a class="button" href="#practice">Configurar práctica</a>
@@ -221,7 +219,6 @@ function focusScreen(){
  window.scrollTo(0,0);
 }
 function session(){
- $("#back").hidden=false;
  A.innerHTML=`<section class="box session">
   <div class="cnt" id="cnt"></div>
   ${S.verbMode?`<p class="muted">${S.verbMode.instruction}</p>`:""}
@@ -285,7 +282,6 @@ function answers(record=true){
  stopPronunciation();
  if(record)setScreenHistory("#respuestas");
  $("#open-pronunciation").removeAttribute("aria-current");
- $("#back").hidden=false;
  const g=Object.keys(D.lessons).map(k=>[k.startsWith("Practical")?k:"Lesson "+k,allQ().filter(x=>x.l==k)]).concat(Object.keys(D.reviews).map(t=>["Review & Check "+t,revI(t)]));
  A.innerHTML=`<section class="page-heading"><h1>Banco de respuestas</h1>
   <p>Usa estas respuestas como ejemplo y adáptalas a tu vida.</p></section>
@@ -307,7 +303,6 @@ function summary(){
 function renderSummary({stats:s,entries,verbMode}){
  stopPronunciation();
  $("#open-pronunciation").removeAttribute("aria-current");
- $("#back").hidden=false;
  const av=s.secs.length?(s.secs.reduce((a,b)=>a+b,0)/s.secs.length).toFixed(1)+" s":"—";
  const stats=[["Respondidas",s.ans],[verbMode?"Tiempo promedio":"Duración promedio",av],["Repetidas",s.rep],["Saltadas",s.skip]];
  A.innerHTML=`<section class="page-heading"><h1>Resumen de la sesión</h1></section>
