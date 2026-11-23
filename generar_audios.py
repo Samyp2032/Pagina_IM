@@ -21,7 +21,7 @@ args = ap.parse_args()
 
 ROOT = Path(__file__).parent
 datos = (ROOT / "data.js").read_text(encoding="utf-8")
-D = json.loads(re.search(r"const D=(\{.*\});", datos, re.S).group(1))
+D = json.loads(re.sub(r",(\s*[\]}])", r"\1", re.search(r"const D=(\{.*\});", datos, re.S).group(1)))  # tolera comas finales
 
 VOZ = {"es": "em_alex", "en": "af_heart"}   # <- cambia aqui las voces
 LANG = {"es": "e", "en": "a"}               # codigo de idioma de Kokoro
@@ -60,11 +60,25 @@ def tono(path, secs=0.4):
         w.writeframes(b"".join(struct.pack("<h", int(6000 * math.sin(i / 18))) for i in range(int(22050 * secs))))
 
 OUT = ROOT / "audio"; OUT.mkdir(exist_ok=True)
+EXTS = (".mp3", ".wav", ".ogg", ".flac")
 manifest = {}
 
+# ordena: lo que este suelto en audio/ (es_xxx / en_xxx) se mueve a audio/es/ o audio/en/
 for lang in ("es", "en"):
-    items = [(t, OUT / (fid(lang, t) + ".mp3")) for t in sorted(texts[lang])]
-    pend = [(t, p) for t, p in items if not p.exists() and not p.with_suffix(".wav").exists()]
+    (OUT / lang).mkdir(exist_ok=True)
+for f in list(OUT.iterdir()):
+    if f.is_file() and f.suffix.lower() in EXTS and f.name[:3] in ("es_", "en_"):
+        f.replace(OUT / f.name[:2] / f.name)
+
+def buscar(lang, nombre):
+    for e in EXTS:
+        if (OUT / lang / (nombre + e)).exists():
+            return OUT / lang / (nombre + e)
+    return None
+
+for lang in ("es", "en"):
+    items = [(t, OUT / lang / (fid(lang, t) + ".mp3")) for t in sorted(texts[lang])]
+    pend = [(t, p) for t, p in items if not buscar(lang, p.stem)]
     print(f"{lang} -> {VOZ[lang]}: {len(items)} frases ({len(pend)} por generar)")
     if args.prueba:
         for t, p in pend: tono(p.with_suffix(".wav"))
@@ -86,10 +100,10 @@ for lang in ("es", "en"):
                 sf.write(str(p.with_suffix(".wav")), wav, 24000)
             if i % 20 == 0: print(f"  {i}/{len(pend)}")
     for t, p in items:
-        real = p if p.exists() else p.with_suffix(".wav")
-        if real.exists():
-            manifest[lang + "|" + t] = f"audio/{real.name}"
+        real = buscar(lang, p.stem)
+        if real:
+            manifest[lang + "|" + t] = f"audio/{lang}/{real.name}"
 
 (OUT / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
 falt = len(texts["es"]) + len(texts["en"]) - len(manifest)
-print(f"Listo. Audios en {OUT}. Frases sin audio: {falt}")
+print(f"Listo. Audios en {OUT} (carpetas es/ y en/). Frases sin audio: {falt}")
