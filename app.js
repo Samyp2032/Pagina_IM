@@ -8,7 +8,11 @@ const SHORT={es:"Tu respuesta fue muy corta. Intenta ampliarla.",en:"Your answer
 const PRE={es:"Parte dos: Review and Check.",en:"Part two: Review and Check."};
 const SIL=2.5,MAX=120,MINX=15;
 const SRC=window.SpeechRecognition||window.webkitSpeechRecognition;
-const S={speed:1,qlang:"es",alang:"en",showEach:true,items:[],i:0,log:[],st:null,abort:null,run:false};
+const VERB_MODES={
+ past:{title:"Pasado simple",form:1,instruction:"Di el verbo en pasado simple."},
+ participle:{title:"Participio pasado",form:2,instruction:"Di solo el participio pasado."}
+};
+const S={micTrack:null,micError:"",legacyMicUsed:false,verbMode:null,speed:1,qlang:"es",alang:"en",showEach:true,items:[],i:0,log:[],st:null,abort:null,run:false};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const fmt=s=>String(s/60|0).padStart(2,"0")+":"+String(s%60|0).padStart(2,"0");
 const mk=(n,l,es,en,kind="q",ord=0)=>({n,l,es,en,kind,ord});
@@ -16,6 +20,13 @@ const shuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(
 function allQ(lo=1,hi=199){const o=[];for(const[k,d]of Object.entries(D.lessons))for(const[n,es,en]of d.qs)if(n>=lo&&n<=hi)o.push(mk("#"+n,k,es,en,"q",n));return o}
 function revI(t,kind="q"){const[b,qs]=D.reviews[t];return qs.map(([es,en],i)=>mk(`R&C ${t}-${i+1}`,"Review "+t,es,en,kind,b+i))}
 function build(mode,chosen,rnd){
+ const verbMode=VERB_MODES[mode];
+ if(verbMode){
+  const items=VERBOS.map((verb,i)=>({
+   n:"#"+(i+1),kind:"verb",base:verb[0],answer:verb[verbMode.form]
+  }));
+  return rnd?shuf(items):items;
+ }
  if(mode=="mix")return shuf(allQ()).slice(0,15);
  if(mode=="exam"){const p1=shuf(allQ(81,115)).slice(0,5),p2=shuf(revI("5&6","expand")).slice(0,2);p2[0].pre=PRE;return p1.concat(p2)}
  if(mode=="ask")return shuf(Object.keys(D.lessons)).slice(0,5).map((k,i)=>{const d=D.lessons[k];return mk("ASK-"+(i+1),k,`Hazme una pregunta sobre ${d.te}.`,`Ask me a question about ${d.tn}.`,"ask",i)});
@@ -27,11 +38,18 @@ function dyn(o){const d=new Date(),w=(d.getDay()+6)%7;
  if(o==4)return w==0?"Yes, it is. Today is Monday.":`No, it isn’t. Today is ${DAYS[w]}.`;
  if(o==107){const n=d.getDate(),s=(n%100>=11&&n%100<=13)?"th":({1:"st",2:"nd",3:"rd"}[n%10]||"th");return `Today is ${DAYS[w]}, ${MONTHS[d.getMonth()]} ${n}${s}.`}
  return null}
-function model(it){if(it.kind=="ask"){const q=D.lessons[it.l].qs;return "Example question: "+q[Math.random()*q.length|0][2]}return dyn(it.ord)||D.answers[it.ord]||""}
+function model(it){if(it.kind==="verb")return it.answer;if(it.kind=="ask"){const q=D.lessons[it.l].qs;return "Example question: "+q[Math.random()*q.length|0][2]}return dyn(it.ord)||D.answers[it.ord]||""}
 
 /* ---------- pantallas ---------- */
 const waveform = '<span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>';
+function modeOptions(modes,checkFirst=false){
+ return modes.map(([value,title,detail],i)=>`
+  <label class="mode"><input type="radio" name="mode" value="${value}" ${checkFirst&&i===0?"checked":""}>
+   <span><strong>${title}</strong><small>${detail}</small></span>
+  </label>`).join("");
+}
 function home(){
+ releaseMicrophone();
  S.run=false;try{speechSynthesis.cancel()}catch(e){}if(P.stop)P.stop();
  const modes=[
   ["free","Práctica libre","Recorre las preguntas del banco principal."],
@@ -57,10 +75,13 @@ function home(){
    <div class="setup">
     <section class="box">
      <h2>Modo de práctica</h2>
-     <div class="modes">${modes.map(([value,title,detail],i)=>`
-      <label class="mode"><input type="radio" name="mode" value="${value}" ${i?"":"checked"}>
-       <span><strong>${title}</strong><small>${detail}</small></span>
-      </label>`).join("")}</div>
+     <div class="modes">${modeOptions(modes,true)}</div>
+     <div class="lesson-settings">
+      <h3>Práctica de verbos</h3>
+      <div class="modes">${modeOptions(Object.entries(VERB_MODES).map(([mode,config])=>[
+       mode,config.title,`${VERBOS.length} verbos. ${config.instruction}`
+      ]))}</div>
+     </div>
      <div class="lesson-settings" id="lessons" hidden>
       <h3>Lecciones y repasos</h3>
       <div class="chips">${LK.map((k,i)=>`<label><input type="checkbox" class="lc" value="${esc(k)}" ${i?"":"checked"}>${esc(k)}</label>`).join("")}</div>
@@ -72,10 +93,11 @@ function home(){
     </section>
     <section class="box">
      <h2>Ajustes de sesión</h2>
-     <div class="language-grid">
+     <div class="language-grid" id="language-settings">
       <label class="field">Pregunta en<select id="ql"><option value="es">Español</option><option value="en">Inglés</option></select></label>
       <label class="field">Mi respuesta en<select id="al"><option value="en">Inglés</option><option value="es">Español</option></select></label>
      </div>
+     <p class="muted" id="verb-language" hidden>Escucha y responde en inglés.</p>
      <label class="field speed" for="spd"><span>Velocidad de la voz <output id="speed-value" for="spd">1×</output></span></label>
      <input type="range" id="spd" min="0.6" max="1.4" step="0.05" value="1">
      <div class="options">
@@ -92,12 +114,15 @@ function home(){
   radio.addEventListener("change",e=>{
    const mode=e.target.value;
    $("#lessons").hidden=mode!=="lesson";
-   $("#random-setting").hidden=mode!=="lesson"&&mode!=="free";
+   const verbMode=Boolean(VERB_MODES[mode]);
+   $("#language-settings").hidden=verbMode;
+   $("#verb-language").hidden=!verbMode;
+   $("#random-setting").hidden=!verbMode&&mode!=="lesson"&&mode!=="free";
    $("#msg").hidden=true;
   });
  }
 }
-function start(){
+async function start(){
  const mode=document.querySelector("input[name=mode]:checked").value,chosen=[...document.querySelectorAll(".lc:checked")].map(x=>x.value);
  if(mode=="lesson"&&!chosen.length){
   const message=$("#msg");
@@ -105,11 +130,15 @@ function start(){
   message.hidden=false;
   return;
  }
- S.qlang=$("#ql").value;S.alang=$("#al").value;S.speed=+$("#spd").value;S.showEach=$("#shw").checked;
+ S.verbMode=VERB_MODES[mode]||null;
+ S.qlang=S.verbMode?"en":$("#ql").value;
+ S.alang=S.verbMode?"en":$("#al").value;
+ S.speed=+$("#spd").value;S.showEach=$("#shw").checked;
  S.items=build(mode,chosen,$("#rnd").checked);S.i=0;S.log=[];S.st={ans:0,skip:0,rep:0,secs:[]};S.run=true;
  try{navigator.wakeLock&&navigator.wakeLock.request("screen").catch(()=>{})}catch(e){}
  try{speechSynthesis.getVoices()}catch(e){}
- session();loadManifest().then(()=>{if(S.run)run()})
+ session();
+ await beginPractice(S.verbMode?null:loadManifest());
 }
 function focusScreen(){
  A.focus({preventScroll:true});
@@ -118,6 +147,7 @@ function focusScreen(){
 function session(){
  A.innerHTML=`<section class="box session">
   <div class="cnt" id="cnt"></div>
+  ${S.verbMode?`<p class="muted">${S.verbMode.instruction}</p>`:""}
   <div id="orb" aria-hidden="true">${waveform}</div>
   <h1 class="state" role="status" id="st">Preparando la práctica</h1>
   <div class="timer" id="timer">00:00</div>
@@ -135,14 +165,18 @@ function session(){
 }
 const ab=c=>{if(S.abort)S.abort(c)};
 const LBL={speaking:"Escucha la pregunta",listening:"Responde en voz alta",hearing:"Escuchando tu respuesta",processing:"Procesando",review:"Repaso",waiting:"En espera"};
-function setState(n){const o=$("#orb"),s=$("#st");if(!o)return;o.className="o-"+n;s.textContent=LBL[n]}
+function setState(n){const o=$("#orb"),s=$("#st");if(!o)return;o.className="o-"+n;s.textContent=S.verbMode&&n==="speaking"?"Escucha el verbo":LBL[n]}
 const warn=t=>{const w=$("#warn");if(w)w.textContent=t};
+function reviewPrompt(it){
+ if(it.kind==="verb")return `<p class="go">${esc(it.n)} · Forma base: <span lang="en">${esc(it.base)}</span></p>`;
+ return `<p class="go">${esc(it.n)} ${esc(it.es)}</p><p class="en">${esc(it.en)}</p>`;
+}
 function showRv(e){const r=$("#rv");if(!r)return;$("#orb").hidden=true;$("#timer").hidden=true;
  r.innerHTML=`
-  <p class="go">${esc(e.it.n)} ${esc(e.it.es)}</p><p class="en">${esc(e.it.en)}</p>
+  ${reviewPrompt(e.it)}
   <dl class="comparison"><div><dt>Tu respuesta</dt><dd>${esc(e.ans)}</dd></div>
    <div><dt>Respuesta modelo</dt><dd>${esc(e.model)}</dd></div></dl>
-  <p class="muted">Duración: ${e.secs.toFixed(1)} s</p>`;r.hidden=false}
+  <p class="muted">${S.verbMode?"Tiempo para responder":"Duración"}: ${e.secs.toFixed(1)} s</p>`;r.hidden=false}
 function hideRv(){const r=$("#rv");if(r)r.hidden=true;const o=$("#orb"),t=$("#timer");if(o){o.hidden=false;t.hidden=false}}
 function backHome(){
  home();
@@ -159,14 +193,14 @@ function answers(){
  focusScreen();
 }
 function summary(){
+ releaseMicrophone();
  S.run=false;const s=S.st,av=s.secs.length?(s.secs.reduce((a,b)=>a+b,0)/s.secs.length).toFixed(1)+" s":"—";
- const stats=[["Respondidas",s.ans],["Duración promedio",av],["Repetidas",s.rep],["Saltadas",s.skip]];
+ const stats=[["Respondidas",s.ans],[S.verbMode?"Tiempo promedio":"Duración promedio",av],["Repetidas",s.rep],["Saltadas",s.skip]];
  A.innerHTML=`<section class="page-heading"><h1>Resumen de la sesión</h1>
   <button class="alt" onclick="backHome()">Volver al inicio</button></section>
   <dl class="stats">${stats.map(([label,value])=>`<div class="box"><dt>${label}</dt><dd>${value}</dd></div>`).join("")}</dl>
-  <section class="box"><h2>Repaso de preguntas</h2>
-   ${S.log.length?S.log.map(e=>`<div class="item"><p class="go">${esc(e.it.n)} ${esc(e.it.es)}</p>
-    <p class="en">${esc(e.it.en)}</p><dl class="comparison"><div><dt>Tu respuesta</dt><dd>${esc(e.ans)}</dd></div>
+  <section class="box"><h2>${S.verbMode?S.verbMode.title:"Repaso de preguntas"}</h2>
+   ${S.log.length?S.log.map(e=>`<div class="item">${reviewPrompt(e.it)}<dl class="comparison"><div><dt>Tu respuesta</dt><dd>${esc(e.ans)}</dd></div>
      <div><dt>Respuesta modelo</dt><dd>${esc(e.model)}</dd></div></dl></div>`).join(""):"<p>No hubo respuestas en esta sesión.</p>"}
   </section>`;
  focusScreen();
@@ -206,29 +240,160 @@ function playFile(url){return new Promise((res,rej)=>{
  P.stop=()=>{try{a.pause()}catch(e){}fin()};
  S.abort=c=>{try{a.pause()}catch(e){}fin(c)};
  a.play().catch(e=>fin(undefined,e))})}
-async function speak(text,lang){
- const f=MAN&&MAN[lang+"|"+text];
+async function speak(text,lang,file){
+ const f=file||(MAN&&MAN[lang+"|"+text]);
  if(f){try{return await playFile(f)}catch(e){console.error("audio:",e)}}
  return sysSpeak(text,lang)}
-function listen(ns=20){return new Promise(res=>{
- const t0=Date.now();let base="",cur="",vs=0,last=0,over=false,rec=null,tm=0;
+const micErrors={
+ "not-allowed":"El navegador no recibió permiso para usar el micrófono.",
+ "service-not-allowed":"El navegador bloqueó el reconocimiento de voz.",
+ "network":"No se pudo conectar con el reconocimiento de voz.",
+ "audio-capture":"No se encontró un micrófono disponible.",
+ "language-not-supported":"El navegador no puede reconocer el idioma seleccionado."
+};
+
+function releaseMicrophone(){
+ S.micTrack?.stop();
+ S.micTrack=null;
+}
+window.addEventListener("pagehide",releaseMicrophone);
+
+function supportsRecognitionTrack(){
+ // La presencia de SpeechRecognition no indica si acepta una pista de audio.
+ const version=Number(navigator.userAgent.match(/Chrome\/(\d+)/)?.[1]);
+ return version>=135&&!/Android|Mobile/.test(navigator.userAgent);
+}
+
+async function beginPractice(ready){
+ let cancelled=false;
+ S.abort=action=>{
+  if(action!=="end")return;
+  cancelled=true;
+  S.abort=null;
+  summary();
+ };
+ S.micError="";
+ S.legacyMicUsed=false;
+ if(SRC&&navigator.mediaDevices?.getUserMedia&&supportsRecognitionTrack()){
+  $("#st").textContent="Preparando el micrófono";
+  try{
+   const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+   if(cancelled){
+    stream.getTracks().forEach(track=>track.stop());
+    return;
+   }
+   S.micTrack=stream.getAudioTracks()[0];
+   S.micTrack.enabled=false;
+  }catch(error){
+   if(cancelled)return;
+   S.micError=error.name==="NotAllowedError"?micErrors["not-allowed"]:micErrors["audio-capture"];
+  }
+ }
+ await ready;
+ if(cancelled)return;
+ S.abort=null;
+ await run();
+}
+
+function listen(ns=20,singleWord=false){return new Promise(res=>{
+ const t0=Date.now(),track=S.micTrack;
+ let base="",cur="",vs=0,last=0,over=false,rec=null,tm=0,manual=!SRC;
  const txt=()=>(base+cur).trim();
- const end=r=>{if(over)return;over=true;clearInterval(tm);S.abort=null;try{if(rec){rec.onend=null;rec.stop()}}catch(e){}res(r)};
- const done=()=>SRC?end({text:txt(),spoke:!!vs,secs:vs?(last-vs)/1000:0}):end({text:"[contestaste en voz alta]",spoke:true,secs:(Date.now()-t0)/1000});
- S.abort=c=>c=="finish"?done():end({cmd:c});
- tm=setInterval(()=>{const n=Date.now(),t=$("#timer");if(t)t.textContent=fmt((n-t0)/1000);
-  if(n-t0>MAX*1000)return done();if(!SRC)return;
-  if(vs&&n-last>SIL*1000)done();else if(!vs&&n-t0>ns*1000)done()},200);
- if(SRC){rec=new SRC();rec.lang=S.alang=="es"?"es-MX":"en-US";rec.continuous=true;rec.interimResults=true;
-  rec.onresult=e=>{let t="";for(let i=0;i<e.results.length;i++)t+=e.results[i][0].transcript+" ";cur=t;if(!vs){vs=Date.now();setState("hearing")}last=Date.now()};
-  rec.onerror=e=>{const M={"not-allowed":"Permiso de micrófono denegado. Actívalo con el candado junto a la dirección.","service-not-allowed":"Tu navegador bloqueó el reconocimiento de voz. Usa Chrome o Edge.","network":"No se pudo conectar con el reconocimiento de voz. Usa Chrome o Edge (Brave y Firefox no lo soportan bien).","audio-capture":"No encuentro ningún micrófono."};if(M[e.error])end({err:M[e.error]})};
-  rec.onend=()=>{if(!over){base+=cur+" ";cur="";try{rec.start()}catch(x){}}};
-  try{rec.start()}catch(x){}}})}
+ const stopRecognition=()=>{
+  if(!rec)return;
+  rec.onresult=rec.onend=rec.onerror=null;
+  try{rec.abort()}catch(e){}
+  if(track)track.enabled=false;
+ };
+ const end=result=>{
+  if(over)return;
+  over=true;
+  clearInterval(tm);
+  S.abort=null;
+  stopRecognition();
+  res(result);
+ };
+ const done=()=>{
+  if(singleWord)return end({text:txt(),secs:vs?(last-t0)/1000:0});
+  end({text:txt(),secs:vs?(last-vs)/1000:0,manual});
+ };
+ function waitForManualFinish(message){
+  manual=true;
+  stopRecognition();
+  warn(message+" Responde en voz alta y pulsa «Terminar respuesta» para ver la solución.");
+ }
+ S.abort=action=>action==="finish"?done():end({cmd:action});
+ tm=setInterval(()=>{
+  const now=Date.now(),timer=$("#timer");
+  if(timer)timer.textContent=fmt((now-t0)/1000);
+  if(now-t0>MAX*1000)return done();
+  if(manual)return;
+  if(vs&&now-last>SIL*1000)done();
+  else if(!vs&&now-t0>ns*1000)done();
+ },200);
+
+ if(S.micError)return waitForManualFinish(S.micError);
+ if(!SRC)return waitForManualFinish("Este navegador no tiene reconocimiento de voz.");
+
+ rec=new SRC();
+ rec.lang=S.alang==="es"?"es-MX":"en-US";
+ rec.continuous=!singleWord;
+ rec.interimResults=true;
+ rec.onresult=event=>{
+  cur=Array.from(event.results,result=>result[0].transcript).join(" ");
+  if(!cur.trim())return;
+  if(!vs){vs=Date.now();setState("hearing")}
+  last=Date.now();
+  if(singleWord&&event.results[event.results.length-1].isFinal)done();
+ };
+ rec.onerror=event=>{
+  const message=micErrors[event.error];
+  if(!message)return;
+  S.micError=message;
+  waitForManualFinish(message);
+ };
+
+ async function startRecognition(){
+  try{
+   if(track){
+    if(track.readyState!=="live"){
+     S.micError="Se desconectó el micrófono.";
+     return waitForManualFinish(S.micError);
+    }
+    track.enabled=true;
+    rec.start(track);
+    return;
+   }
+   // En navegadores antiguos, evita reiniciar el micrófono si eso pediría otro permiso.
+   if(S.legacyMicUsed){
+    let permission;
+    try{permission=await navigator.permissions?.query({name:"microphone"})}catch(e){}
+    if(over||manual)return;
+    if(permission?.state!=="granted"){
+     S.micError="Este navegador no conservó el permiso del micrófono.";
+     return waitForManualFinish(S.micError);
+    }
+   }
+   S.legacyMicUsed=true;
+   rec.start();
+  }catch(e){
+   S.micError="No se pudo iniciar el reconocimiento de voz.";
+   waitForManualFinish(S.micError);
+  }
+ }
+ rec.onend=()=>{
+  if(over||manual)return;
+  base+=cur+" ";
+  cur="";
+  startRecognition();
+ };
+ startRecognition();
+})}
 
 /* ---------- sesión ---------- */
 async function run(){
  while(S.run&&S.i<S.items.length){
-  $("#cnt").textContent=`Pregunta ${S.i+1} de ${S.items.length}`;
+  $("#cnt").textContent=`${S.verbMode?"Verbo":"Pregunta"} ${S.i+1} de ${S.items.length}`;
   const it=S.items[S.i],r=await runItem(it);
   if(r=="end")break;
   if(r=="repeat"){S.st.rep++;continue}
@@ -239,17 +404,20 @@ async function run(){
  summary()}
 async function runItem(it){
  const tm=$("#timer");if(tm)tm.textContent="00:00";
- const parts=[];if(it.pre)parts.push(it.pre[S.qlang]);parts.push(it[S.qlang]);if(it.kind=="expand")parts.push(EXP[S.qlang]);
- setState("speaking");let c;for(const t of parts){c=await speak(t,S.qlang);if(c&&c!="finish")return c}
+ const isVerb=it.kind==="verb";
+ warn("");
+ const parts=[];if(it.pre)parts.push(it.pre[S.qlang]);parts.push(isVerb?it.base:it[S.qlang]);if(it.kind=="expand")parts.push(EXP[S.qlang]);
+ const file=isVerb?`audio_verbos/${it.base}.wav`:undefined;
+ setState("speaking");let c;for(const t of parts){c=await speak(t,S.qlang,file);if(c&&c!="finish")return c}
  await sleep(300);setState("listening");
- let r=await listen();if(r.cmd)return r.cmd;if(r.err){warn(r.err);await sleep(2500);return "end"}
+ let r=await listen(20,isVerb);if(r.cmd)return r.cmd;
  let text=r.text,secs=r.secs;
- if(it.kind=="expand"&&secs<MINX){
+ if(it.kind=="expand"&&secs<MINX&&!r.manual){
   setState("speaking");c=await speak(SHORT[S.qlang],S.qlang);if(c&&c!="finish")return c;
-  await sleep(300);setState("listening");const r2=await listen();if(r2.cmd)return r2.cmd;if(r2.err){warn(r2.err);await sleep(2500);return "end"}
+  await sleep(300);setState("listening");const r2=await listen();if(r2.cmd)return r2.cmd;
   text=(text+" "+r2.text).trim();secs+=r2.secs}
- const counted=secs>0;if(counted){S.st.ans++;S.st.secs.push(secs)}
- S.log.push({it,ans:text||"[sin respuesta]",secs,model:model(it)});
+ const counted=isVerb?Boolean(text):secs>0;if(counted){S.st.ans++;S.st.secs.push(secs)}
+ S.log.push({it,ans:text||(isVerb?"Sin transcripción":"[sin respuesta]"),secs,model:model(it)});
  if(S.showEach){
   setState("review");showRv(S.log[S.log.length-1]);
   const c2=await new Promise(res=>{S.abort=k=>{S.abort=null;res(k=="finish"||k=="next"?"advance":k)}});

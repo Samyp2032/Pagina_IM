@@ -1,0 +1,22 @@
+{
+  "go": "audio_verbos/go.wav",
+  "eat": "audio_verbos/eat.wav",
+  "drink": "audio_verbos/drink.wav",
+  "write": "audio_verbos/write.wav",
+  "speak": "audio_verbos/speak.wav",
+  "take": "audio_verbos/take.wav",
+  "see": "audio_verbos/see.wav",
+  "give": "audio_verbos/give.wav",
+  "break": "audio_verbos/break.wav",
+  "drive": "audio_verbos/drive.wav",
+  "choose": "audio_verbos/choose.wav",
+  "begin": "audio_verbos/begin.wav",
+  "sing": "audio_verbos/sing.wav",
+  "swim": "audio_verbos/swim.wav",
+  "know": "audio_verbos/know.wav",
+  "buy": "audio_verbos/buy.wav",
+  "bring": "audio_verbos/bring.wav",
+  "think": "audio_verbos/think.wav",
+  "make": "audio_verbos/make.wav",
+  "find": "audio_verbos/find.wav"
+}
