@@ -30,52 +30,147 @@ function dyn(o){const d=new Date(),w=(d.getDay()+6)%7;
 function model(it){if(it.kind=="ask"){const q=D.lessons[it.l].qs;return "Example question: "+q[Math.random()*q.length|0][2]}return dyn(it.ord)||D.answers[it.ord]||""}
 
 /* ---------- pantallas ---------- */
+const waveform = '<span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>';
 function home(){
  S.run=false;try{speechSynthesis.cancel()}catch(e){}if(P.stop)P.stop();
- const modes=[["free","Práctica libre (#1-115)"],["lesson","Por lección (elige una o varias)"],["mix","Mix: 15 preguntas al azar (sin Review)"],["exam","Simulacro Examen Oral #3 (lecciones 5-6)"],["ask","Extra: yo hago las preguntas"]];
- A.innerHTML=`<h1>🎤 Simulador de Examen Oral</h1><p class="sub">Escucha la pregunta y contesta hablando. No verás nada en pantalla hasta el repaso.</p>
- ${SRC?"":'<div class="box warn" style="text-align:left">Tu navegador no tiene reconocimiento de voz (usa Chrome en Android o PC). Aun así puedes practicar: contesta en voz alta y toca “Terminar respuesta”.</div>'}
- <div class="box"><h3>Modo</h3>${modes.map((m,i)=>`<label><input type="radio" name="mode" value="${m[0]}" ${i?"":"checked"}>${m[1]}</label>`).join("")}
- <h3>Lecciones <span class="muted" style="font-weight:400;font-size:12px">(solo modo “Por lección”)</span></h3>
- <div class="chips">${LK.map((k,i)=>`<label><input type="checkbox" class="lc" value="${esc(k)}" ${i?"":"checked"}>${esc(k)}</label>`).join("")}</div>
- <div class="row"><button class="alt sm" style="flex:0" onclick="document.querySelectorAll('.lc').forEach(x=>x.checked=true)">Todas</button><button class="alt sm" style="flex:0" onclick="document.querySelectorAll('.lc').forEach(x=>x.checked=false)">Ninguna</button></div>
- <h3>Idiomas</h3>
- <label>Pregunta en: <select id="ql"><option value="es">Español</option><option value="en">Inglés</option></select></label>
- <label>Mi respuesta en: <select id="al"><option value="en">Inglés</option><option value="es">Español</option></select></label>
- <label>Velocidad <input type="range" id="spd" min="0.6" max="1.4" step="0.05" value="1"></label>
- <label><input type="checkbox" id="rnd" checked>Orden aleatorio</label>
- <label><input type="checkbox" id="shw" checked>Ver pregunta y mi respuesta después de cada una</label></div>
- <p class="warn" id="msg"></p>
- <div class="row"><button class="alt" onclick="answers()">📖 Respuestas</button><button onclick="start()">▶ EMPEZAR</button></div>`}
+ const modes=[
+  ["free","Práctica libre","Recorre las preguntas del banco principal."],
+  ["lesson","Por lección","Elige los temas que quieres practicar."],
+  ["mix","Mix","Responde 15 preguntas al azar, sin Review & Check."],
+  ["exam","Simulacro Examen Oral #3","Practica con las lecciones 5 y 6."],
+  ["ask","Yo hago las preguntas","Formula tus propias preguntas sobre 5 temas."]
+ ];
+ A.innerHTML=`
+  <section class="hero">
+   <div class="hero-copy">
+    <h1>Simulador de<br>examen oral</h1>
+    <p>Escucha cada pregunta, responde en voz alta y compara tu respuesta con un ejemplo.</p>
+    <div class="row">
+     <a class="button" href="#practice">Configurar práctica</a>
+     <button class="alt" type="button" onclick="answers()">Ver respuestas</button>
+    </div>
+   </div>
+   <div class="hero-art" aria-hidden="true"><div class="voice-disc">${waveform}</div></div>
+  </section>
+  ${SRC?"":'<p class="notice">Tu navegador no tiene reconocimiento de voz. Puedes responder en voz alta y tocar “Terminar respuesta”.</p>'}
+  <form id="practice" onsubmit="event.preventDefault();start()">
+   <div class="setup">
+    <section class="box">
+     <h2>Modo de práctica</h2>
+     <div class="modes">${modes.map(([value,title,detail],i)=>`
+      <label class="mode"><input type="radio" name="mode" value="${value}" ${i?"":"checked"}>
+       <span><strong>${title}</strong><small>${detail}</small></span>
+      </label>`).join("")}</div>
+     <div class="lesson-settings" id="lessons" hidden>
+      <h3>Lecciones y repasos</h3>
+      <div class="chips">${LK.map((k,i)=>`<label><input type="checkbox" class="lc" value="${esc(k)}" ${i?"":"checked"}>${esc(k)}</label>`).join("")}</div>
+      <div class="row">
+       <button type="button" class="alt sm" onclick="document.querySelectorAll('.lc').forEach(x=>x.checked=true)">Todas</button>
+       <button type="button" class="alt sm" onclick="document.querySelectorAll('.lc').forEach(x=>x.checked=false)">Ninguna</button>
+      </div>
+     </div>
+    </section>
+    <section class="box">
+     <h2>Ajustes de sesión</h2>
+     <div class="language-grid">
+      <label class="field">Pregunta en<select id="ql"><option value="es">Español</option><option value="en">Inglés</option></select></label>
+      <label class="field">Mi respuesta en<select id="al"><option value="en">Inglés</option><option value="es">Español</option></select></label>
+     </div>
+     <label class="field speed" for="spd"><span>Velocidad de la voz <output id="speed-value" for="spd">1×</output></span></label>
+     <input type="range" id="spd" min="0.6" max="1.4" step="0.05" value="1">
+     <div class="options">
+      <label id="random-setting"><input type="checkbox" id="rnd" checked>Orden aleatorio</label>
+      <label><input type="checkbox" id="shw" checked>Mostrar el repaso después de cada pregunta</label>
+     </div>
+     <p class="notice" id="msg" role="alert" hidden></p>
+     <button class="primary-action" type="submit">Empezar práctica</button>
+    </section>
+   </div>
+  </form>`;
+ $("#spd").addEventListener("input",e=>{$("#speed-value").textContent=e.target.value+"×"});
+ for(const radio of document.querySelectorAll("input[name=mode]")){
+  radio.addEventListener("change",e=>{
+   const mode=e.target.value;
+   $("#lessons").hidden=mode!=="lesson";
+   $("#random-setting").hidden=mode!=="lesson"&&mode!=="free";
+   $("#msg").hidden=true;
+  });
+ }
+}
 function start(){
  const mode=document.querySelector("input[name=mode]:checked").value,chosen=[...document.querySelectorAll(".lc:checked")].map(x=>x.value);
- if(mode=="lesson"&&!chosen.length){$("#msg").textContent="⚠ Marca al menos una lección.";return}
+ if(mode=="lesson"&&!chosen.length){
+  const message=$("#msg");
+  message.textContent="Marca al menos una lección.";
+  message.hidden=false;
+  return;
+ }
  S.qlang=$("#ql").value;S.alang=$("#al").value;S.speed=+$("#spd").value;S.showEach=$("#shw").checked;
  S.items=build(mode,chosen,$("#rnd").checked);S.i=0;S.log=[];S.st={ans:0,skip:0,rep:0,secs:[]};S.run=true;
  try{navigator.wakeLock&&navigator.wakeLock.request("screen").catch(()=>{})}catch(e){}
  try{speechSynthesis.getVoices()}catch(e){}
- session();loadManifest().then(()=>{if(S.run)run()})}
+ session();loadManifest().then(()=>{if(S.run)run()})
+}
+function focusScreen(){
+ A.focus({preventScroll:true});
+ window.scrollTo(0,0);
+}
 function session(){
- A.innerHTML=`<div class="cnt" id="cnt"></div><div id="orb"></div><div class="state" id="st"></div><div class="timer" id="timer">00:00</div><div class="warn" id="warn"></div>
- <div class="box" id="rv" hidden></div>
- <div class="row"><button onclick="ab('repeat')">🔁 Repetir</button><button onclick="ab('prev')">⏮ Anterior</button><button onclick="ab('next')">⏭ Siguiente</button></div>
- <div class="row"><button onclick="ab('finish')">✅ Terminar respuesta / continuar</button></div>
- <div class="row"><button class="red" onclick="ab('end')">⏹ Terminar sesión</button></div>`}
+ A.innerHTML=`<section class="box session">
+  <div class="cnt" id="cnt"></div>
+  <div id="orb" aria-hidden="true">${waveform}</div>
+  <h1 class="state" role="status" id="st">Preparando la práctica</h1>
+  <div class="timer" id="timer">00:00</div>
+  <p class="notice warn" id="warn" role="alert"></p>
+  <div class="review" id="rv" hidden></div>
+  <div class="row session-nav">
+   <button class="alt" onclick="ab('prev')">Anterior</button>
+   <button class="alt" onclick="ab('repeat')">Repetir</button>
+   <button class="alt" onclick="ab('next')">Siguiente</button>
+  </div>
+  <button class="primary-action" onclick="ab('finish')">Terminar respuesta / continuar</button>
+  <button class="quiet session-end" onclick="ab('end')">Terminar sesión</button>
+ </section>`;
+ focusScreen();
+}
 const ab=c=>{if(S.abort)S.abort(c)};
-const LBL={speaking:"🔊 Hablando",listening:"🎤 Escuchando",hearing:"🎤 Escuchando",processing:"⏳ Procesando",review:"📝 Repaso",waiting:"⏸ Esperando"};
+const LBL={speaking:"Escucha la pregunta",listening:"Responde en voz alta",hearing:"Escuchando tu respuesta",processing:"Procesando",review:"Repaso",waiting:"En espera"};
 function setState(n){const o=$("#orb"),s=$("#st");if(!o)return;o.className="o-"+n;s.textContent=LBL[n]}
 const warn=t=>{const w=$("#warn");if(w)w.textContent=t};
 function showRv(e){const r=$("#rv");if(!r)return;$("#orb").hidden=true;$("#timer").hidden=true;
- r.innerHTML=`<p class="go">${esc(e.it.n)} ${esc(e.it.es)}</p><p class="en">${esc(e.it.en)}</p><p class="g">Tú dijiste:</p><p>${esc(e.ans)}</p><p class="go">Respuesta modelo:</p><p>${esc(e.model)}</p><p class="muted" style="font-size:13px">Duración: ${e.secs.toFixed(1)} s</p>`;r.hidden=false}
+ r.innerHTML=`
+  <p class="go">${esc(e.it.n)} ${esc(e.it.es)}</p><p class="en">${esc(e.it.en)}</p>
+  <dl class="comparison"><div><dt>Tu respuesta</dt><dd>${esc(e.ans)}</dd></div>
+   <div><dt>Respuesta modelo</dt><dd>${esc(e.model)}</dd></div></dl>
+  <p class="muted">Duración: ${e.secs.toFixed(1)} s</p>`;r.hidden=false}
 function hideRv(){const r=$("#rv");if(r)r.hidden=true;const o=$("#orb"),t=$("#timer");if(o){o.hidden=false;t.hidden=false}}
+function backHome(){
+ home();
+ focusScreen();
+}
 function answers(){
  const g=Object.keys(D.lessons).map(k=>[k.startsWith("Practical")?k:"Lesson "+k,allQ().filter(x=>x.l==k)]).concat(Object.keys(D.reviews).map(t=>["Review & Check "+t,revI(t)]));
- A.innerHTML=`<h1>📖 Respuestas</h1><p class="sub">Respuestas sencillas de ejemplo: adáptalas a tu vida.</p><div class="box">${g.map(([t,its])=>`<h3>${esc(t)}</h3>`+its.map(it=>`<div class="item"><p><b>${esc(it.n)} ${esc(it.en)}</b></p><p class="g" style="font-weight:400">→ ${esc(model(it))}</p><p class="en">${esc(it.es)}</p></div>`).join("")).join("")}</div><div class="row"><button onclick="home()">↩ Volver al inicio</button></div>`}
+ A.innerHTML=`<section class="page-heading"><h1>Banco de respuestas</h1>
+  <p>Usa estas respuestas como ejemplo y adáptalas a tu vida.</p>
+  <button class="alt" onclick="backHome()">Volver al inicio</button></section>
+  <div class="catalog">${g.map(([t,its])=>`<section class="box"><h2>${esc(t)}</h2>`+its.map(it=>`
+   <div class="item"><p class="go">${esc(it.n)} ${esc(it.en)}</p><p class="en">${esc(it.es)}</p>
+    <p class="example">${esc(model(it))}</p></div>`).join("")+"</section>").join("")}</div>`;
+ focusScreen();
+}
 function summary(){
  S.run=false;const s=S.st,av=s.secs.length?(s.secs.reduce((a,b)=>a+b,0)/s.secs.length).toFixed(1)+" s":"—";
- A.innerHTML=`<h1>📋 Resumen</h1><div class="box" style="text-align:center">Respondidas: ${s.ans} · Promedio: ${av} · Repetidas: ${s.rep} · Saltadas: ${s.skip}</div>
- <div class="box">${S.log.length?S.log.map((e,k)=>`<div class="item"><p class="go">${k+1}. ${esc(e.it.n)} ${esc(e.it.es)}</p><p class="en">${esc(e.it.en)}</p><p><span class="g">Tú dijiste:</span> ${esc(e.ans)}</p><p><span class="go">Modelo:</span> ${esc(e.model)}</p></div>`).join(""):"No hubo respuestas en esta sesión."}</div>
- <div class="row"><button onclick="home()">↩ Volver al inicio</button></div>`}
+ const stats=[["Respondidas",s.ans],["Duración promedio",av],["Repetidas",s.rep],["Saltadas",s.skip]];
+ A.innerHTML=`<section class="page-heading"><h1>Resumen de la sesión</h1>
+  <button class="alt" onclick="backHome()">Volver al inicio</button></section>
+  <dl class="stats">${stats.map(([label,value])=>`<div class="box"><dt>${label}</dt><dd>${value}</dd></div>`).join("")}</dl>
+  <section class="box"><h2>Repaso de preguntas</h2>
+   ${S.log.length?S.log.map(e=>`<div class="item"><p class="go">${esc(e.it.n)} ${esc(e.it.es)}</p>
+    <p class="en">${esc(e.it.en)}</p><dl class="comparison"><div><dt>Tu respuesta</dt><dd>${esc(e.ans)}</dd></div>
+     <div><dt>Respuesta modelo</dt><dd>${esc(e.model)}</dd></div></dl></div>`).join(""):"<p>No hubo respuestas en esta sesión.</p>"}
+  </section>`;
+ focusScreen();
+}
 
 /* ---------- voz ---------- */
 /* Las voces vienen pregrabadas en audio/ (las crea generar_audios.py). Si falta un audio, usa la voz del navegador. */
@@ -162,4 +257,18 @@ async function runItem(it){
   if(c2=="repeat"){S.log.pop();if(counted){S.st.ans--;S.st.secs.pop()}}
   if(c2!="advance")return c2}
  return "advance"}
+/* ---------- tema ---------- */
+const themeToggle=$("#theme-toggle");
+const themeKey="simulador-oral:theme";
+function setTheme(dark){
+ document.documentElement.dataset.theme=dark?"dark":"light";
+ themeToggle.setAttribute("aria-pressed",String(dark));
+ $('meta[name="theme-color"]').content=dark?"#101f34":"#edf5ff";
+}
+try{setTheme(localStorage.getItem(themeKey)==="dark")}catch(e){}
+themeToggle.addEventListener("click",()=>{
+ const dark=themeToggle.getAttribute("aria-pressed")!=="true";
+ setTheme(dark);
+ try{localStorage.setItem(themeKey,dark?"dark":"light")}catch(e){}
+});
 home();
