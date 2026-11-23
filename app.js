@@ -13,7 +13,6 @@ const VERB_MODES={
  participle:{title:"Participio pasado",form:2,instruction:"Di solo el participio pasado."}
 };
 const S={micTrack:null,micError:"",legacyMicUsed:false,verbMode:null,speed:1,qlang:"es",alang:"en",showEach:true,items:[],i:0,log:[],st:null,abort:null,run:false};
-const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const fmt=s=>String(s/60|0).padStart(2,"0")+":"+String(s%60|0).padStart(2,"0");
 const mk=(n,l,es,en,kind="q",ord=0)=>({n,l,es,en,kind,ord});
 const shuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
@@ -48,7 +47,82 @@ function modeOptions(modes,checkFirst=false){
    <span><strong>${title}</strong><small>${detail}</small></span>
   </label>`).join("");
 }
+const pronunciationForms=["Forma base","Pasado simple","Participio pasado"];
+function pronunciationPanel(){
+ return `<section class="box pronunciation" aria-labelledby="pronunciation-title">
+  <h1 id="pronunciation-title">Pronunciación de verbos</h1>
+  <p class="muted">Escucha una forma y repítela en voz alta.</p>
+  <label class="field">Verbo
+   <select id="pronunciation-verb" lang="en">${VERBOS.map(([base],i)=>`<option value="${i}">${esc(base)}</option>`).join("")}</select>
+  </label>
+  <div class="pronunciation-forms" aria-live="polite"></div>
+  <div class="pronunciation-controls">
+   <label class="pronunciation-speed"><input type="checkbox" id="pronunciation-slow">Escuchar más lento</label>
+   <button type="button" id="pronunciation-next">Siguiente</button>
+  </div>
+  <p class="muted pronunciation-status" role="status"></p>
+  <audio id="pronunciation-audio" preload="none"></audio>
+ </section>`;
+}
+function stopPronunciation(){
+ $("#pronunciation-audio")?.pause();
+}
+function setupPronunciation(){
+ const select=$("#pronunciation-verb"),forms=$(".pronunciation-forms"),audio=$("#pronunciation-audio");
+ const status=$(".pronunciation-status"),slow=$("#pronunciation-slow");
+ const next=$("#pronunciation-next");
+ let playback=0;
+ function showForms(){
+  const last=select.selectedIndex===select.options.length-1;
+  next.disabled=last;
+  next.textContent=last?"Fin de la lista":"Siguiente";
+  next.classList.toggle("alt",last);
+  playback++;
+  audio.pause();
+  status.textContent="";
+  forms.innerHTML=VERBOS[select.value].map((word,i)=>`
+   <div class="pronunciation-form">
+    <span class="muted">${pronunciationForms[i]}</span>
+    <strong lang="en">${esc(word)}</strong>
+    <button type="button" class="alt sm" data-form="${i}" aria-label="Escuchar ${pronunciationForms[i].toLowerCase()}">Escuchar</button>
+   </div>`).join("");
+ }
+ select.addEventListener("change",showForms);
+ next.addEventListener("click",()=>{
+  select.selectedIndex++;
+  showForms();
+ });
+ function updateSpeed(){audio.playbackRate=slow.checked ? 0.75 : 1}
+ slow.addEventListener("change",updateSpeed);
+ audio.addEventListener("ended",()=>{status.textContent=""});
+ forms.addEventListener("click",async event=>{
+  const button=event.target.closest("button[data-form]");
+  if(!button)return;
+  const request=++playback,form=Number(button.dataset.form),word=VERBOS[select.value][form];
+  audio.src=`audio_verbos/${form?"formas/":""}${encodeURIComponent(word)}.wav`;
+  updateSpeed();
+  status.textContent=`Reproduciendo: ${word}`;
+  try{await audio.play()}
+  catch(error){
+   if(request===playback)status.textContent="No se pudo reproducir el audio.";
+  }
+ });
+ showForms();
+}
+function showPronunciation(record=true){
+ if($("#pronunciation-verb"))return;
+ leavePractice();
+ if(record)setScreenHistory("#pronunciacion");
+ $("#back").hidden=false;
+ $("#open-pronunciation").setAttribute("aria-current","page");
+ A.innerHTML=pronunciationPanel();
+ setupPronunciation();
+ focusScreen();
+}
 function home(){
+ stopPronunciation();
+ $("#open-pronunciation").removeAttribute("aria-current");
+ $("#back").hidden=true;
  releaseMicrophone();
  S.run=false;try{speechSynthesis.cancel()}catch(e){}if(P.stop)P.stop();
  const modes=[
@@ -70,8 +144,8 @@ function home(){
    </div>
    <div class="hero-art" aria-hidden="true"><div class="voice-disc">${waveform}</div></div>
   </section>
-  ${SRC?"":'<p class="notice">Tu navegador no tiene reconocimiento de voz. Puedes responder en voz alta y tocar “Terminar respuesta”.</p>'}
   <form id="practice" onsubmit="event.preventDefault();start()">
+   ${SRC?"":'<p class="notice">Tu navegador no tiene reconocimiento de voz. Puedes responder en voz alta y tocar “Ver respuesta”.</p>'}
    <div class="setup">
     <section class="box">
      <h2>Modo de práctica</h2>
@@ -130,6 +204,7 @@ async function start(){
   message.hidden=false;
   return;
  }
+ stopPronunciation();
  S.verbMode=VERB_MODES[mode]||null;
  S.qlang=S.verbMode?"en":$("#ql").value;
  S.alang=S.verbMode?"en":$("#al").value;
@@ -137,6 +212,7 @@ async function start(){
  S.items=build(mode,chosen,$("#rnd").checked);S.i=0;S.log=[];S.st={ans:0,skip:0,rep:0,secs:[]};S.run=true;
  try{navigator.wakeLock&&navigator.wakeLock.request("screen").catch(()=>{})}catch(e){}
  try{speechSynthesis.getVoices()}catch(e){}
+ setScreenHistory("#sesion");
  session();
  await beginPractice(S.verbMode?null:loadManifest());
 }
@@ -145,6 +221,7 @@ function focusScreen(){
  window.scrollTo(0,0);
 }
 function session(){
+ $("#back").hidden=false;
  A.innerHTML=`<section class="box session">
   <div class="cnt" id="cnt"></div>
   ${S.verbMode?`<p class="muted">${S.verbMode.instruction}</p>`:""}
@@ -156,16 +233,28 @@ function session(){
   <div class="row session-nav">
    <button class="alt" onclick="ab('prev')">Anterior</button>
    <button class="alt" onclick="ab('repeat')">Repetir</button>
-   <button class="alt" onclick="ab('next')">Siguiente</button>
+   <button id="session-next" class="alt" data-action="next" onclick="ab(this.dataset.action)">Saltar</button>
   </div>
-  <button class="primary-action" onclick="ab('finish')">Terminar respuesta / continuar</button>
   <button class="quiet session-end" onclick="ab('end')">Terminar sesión</button>
  </section>`;
  focusScreen();
 }
 const ab=c=>{if(S.abort)S.abort(c)};
-const LBL={speaking:"Escucha la pregunta",listening:"Responde en voz alta",hearing:"Escuchando tu respuesta",processing:"Procesando",review:"Repaso",waiting:"En espera"};
-function setState(n){const o=$("#orb"),s=$("#st");if(!o)return;o.className="o-"+n;s.textContent=S.verbMode&&n==="speaking"?"Escucha el verbo":LBL[n]}
+function sessionAction(label,action){
+ const next=$("#session-next");
+ if(!next)return;
+ next.textContent=label;
+ next.dataset.action=action;
+ next.classList.toggle("alt",action==="next");
+}
+const LBL={speaking:"Escucha la pregunta",listening:"Responde en voz alta",hearing:"Escuchando tu respuesta",preparing:"Preparando la escucha",review:"Repaso",waiting:"En espera"};
+function setState(n){
+ const o=$("#orb"),s=$("#st");if(!o)return;
+ o.className="o-"+n;
+ s.textContent=S.verbMode&&n==="speaking"?"Escucha el verbo":LBL[n];
+ if(n==="speaking")sessionAction("Saltar","next");
+ if(n==="review")sessionAction(S.i+1===S.items.length?"Ver resumen":"Siguiente","finish");
+}
 const warn=t=>{const w=$("#warn");if(w)w.textContent=t};
 function reviewPrompt(it){
  if(it.kind==="verb")return `<p class="go">${esc(it.n)} · Forma base: <span lang="en">${esc(it.base)}</span></p>`;
@@ -178,33 +267,85 @@ function showRv(e){const r=$("#rv");if(!r)return;$("#orb").hidden=true;$("#timer
    <div><dt>Respuesta modelo</dt><dd>${esc(e.model)}</dd></div></dl>
   <p class="muted">${S.verbMode?"Tiempo para responder":"Duración"}: ${e.secs.toFixed(1)} s</p>`;r.hidden=false}
 function hideRv(){const r=$("#rv");if(r)r.hidden=true;const o=$("#orb"),t=$("#timer");if(o){o.hidden=false;t.hidden=false}}
+function leavePractice(){
+ if(!S.run)return;
+ S.run=false;
+ S.abort?.("home");
+ S.abort=null;
+ releaseMicrophone();
+}
 function backHome(){
+ leavePractice();
+ setScreenHistory("");
  home();
  focusScreen();
 }
-function answers(){
+function answers(record=true){
+ leavePractice();
+ stopPronunciation();
+ if(record)setScreenHistory("#respuestas");
+ $("#open-pronunciation").removeAttribute("aria-current");
+ $("#back").hidden=false;
  const g=Object.keys(D.lessons).map(k=>[k.startsWith("Practical")?k:"Lesson "+k,allQ().filter(x=>x.l==k)]).concat(Object.keys(D.reviews).map(t=>["Review & Check "+t,revI(t)]));
  A.innerHTML=`<section class="page-heading"><h1>Banco de respuestas</h1>
-  <p>Usa estas respuestas como ejemplo y adáptalas a tu vida.</p>
-  <button class="alt" onclick="backHome()">Volver al inicio</button></section>
+  <p>Usa estas respuestas como ejemplo y adáptalas a tu vida.</p></section>
   <div class="catalog">${g.map(([t,its])=>`<section class="box"><h2>${esc(t)}</h2>`+its.map(it=>`
    <div class="item"><p class="go">${esc(it.n)} ${esc(it.en)}</p><p class="en">${esc(it.es)}</p>
     <p class="example">${esc(model(it))}</p></div>`).join("")+"</section>").join("")}</div>`;
  focusScreen();
 }
+const reports=new Map();
 function summary(){
  releaseMicrophone();
- S.run=false;const s=S.st,av=s.secs.length?(s.secs.reduce((a,b)=>a+b,0)/s.secs.length).toFixed(1)+" s":"—";
- const stats=[["Respondidas",s.ans],[S.verbMode?"Tiempo promedio":"Duración promedio",av],["Repetidas",s.rep],["Saltadas",s.skip]];
- A.innerHTML=`<section class="page-heading"><h1>Resumen de la sesión</h1>
-  <button class="alt" onclick="backHome()">Volver al inicio</button></section>
+ S.run=false;
+ const report={stats:S.st,entries:S.log,verbMode:S.verbMode};
+ const id=reports.size+1;
+ reports.set(id,report);
+ setScreenHistory("#resumen",true,{report:id});
+ renderSummary(report);
+}
+function renderSummary({stats:s,entries,verbMode}){
+ stopPronunciation();
+ $("#open-pronunciation").removeAttribute("aria-current");
+ $("#back").hidden=false;
+ const av=s.secs.length?(s.secs.reduce((a,b)=>a+b,0)/s.secs.length).toFixed(1)+" s":"—";
+ const stats=[["Respondidas",s.ans],[verbMode?"Tiempo promedio":"Duración promedio",av],["Repetidas",s.rep],["Saltadas",s.skip]];
+ A.innerHTML=`<section class="page-heading"><h1>Resumen de la sesión</h1></section>
   <dl class="stats">${stats.map(([label,value])=>`<div class="box"><dt>${label}</dt><dd>${value}</dd></div>`).join("")}</dl>
-  <section class="box"><h2>${S.verbMode?S.verbMode.title:"Repaso de preguntas"}</h2>
-   ${S.log.length?S.log.map(e=>`<div class="item">${reviewPrompt(e.it)}<dl class="comparison"><div><dt>Tu respuesta</dt><dd>${esc(e.ans)}</dd></div>
+  <section class="box"><h2>${verbMode?verbMode.title:"Repaso de preguntas"}</h2>
+   ${entries.length?entries.map(e=>`<div class="item">${reviewPrompt(e.it)}<dl class="comparison"><div><dt>Tu respuesta</dt><dd>${esc(e.ans)}</dd></div>
      <div><dt>Respuesta modelo</dt><dd>${esc(e.model)}</dd></div></dl></div>`).join(""):"<p>No hubo respuestas en esta sesión.</p>"}
   </section>`;
  focusScreen();
 }
+
+/* ---------- historial ---------- */
+function setScreenHistory(hash,replace=false,state=null){
+ const url=new URL(location.href);
+ url.hash=hash;
+ if(!replace&&url.href===location.href)return;
+ if(replace)history.replaceState(state,"",url);
+ else history.pushState(state,"",url);
+}
+function restoreScreen(){
+ if(location.hash==="#pronunciacion")return showPronunciation(false);
+ if(location.hash==="#respuestas")return answers(false);
+ if(location.hash==="#resumen"){
+  const report=reports.get(history.state?.report);
+  if(report){
+   leavePractice();
+   return renderSummary(report);
+  }
+ }
+ // Adelante o recargar no debe iniciar el micrófono automáticamente.
+ if(location.hash==="#sesion"||location.hash==="#resumen")setScreenHistory("#practice",true);
+ if(!$("#practice")){
+  leavePractice();
+  home();
+ }
+ if(location.hash==="#practice")$("#practice").scrollIntoView();
+}
+window.addEventListener("popstate",restoreScreen);
 
 /* ---------- voz ---------- */
 /* Las voces vienen pregrabadas en audio/ (las crea generar_audios.py). Si falta un audio, usa la voz del navegador. */
@@ -267,10 +408,10 @@ function supportsRecognitionTrack(){
 async function beginPractice(ready){
  let cancelled=false;
  S.abort=action=>{
-  if(action!=="end")return;
+  if(action!=="end"&&action!=="home")return;
   cancelled=true;
   S.abort=null;
-  summary();
+  if(action==="end")summary();
  };
  S.micError="";
  S.legacyMicUsed=false;
@@ -297,11 +438,12 @@ async function beginPractice(ready){
 
 function listen(ns=20,singleWord=false){return new Promise(res=>{
  const t0=Date.now(),track=S.micTrack;
- let base="",cur="",vs=0,last=0,over=false,rec=null,tm=0,manual=!SRC;
+ let base="",cur="",vs=0,last=0,readyAt=0,over=false,rec=null,tm=0,manual=!SRC,retrying=false;
+ setState("preparing");
  const txt=()=>(base+cur).trim();
  const stopRecognition=()=>{
   if(!rec)return;
-  rec.onresult=rec.onend=rec.onerror=null;
+  rec.onaudiostart=rec.onresult=rec.onnomatch=rec.onend=rec.onerror=null;
   try{rec.abort()}catch(e){}
   if(track)track.enabled=false;
  };
@@ -314,22 +456,29 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
   res(result);
  };
  const done=()=>{
-  if(singleWord)return end({text:txt(),secs:vs?(last-t0)/1000:0});
+  if(singleWord)return end({text:txt(),secs:vs?(last-(readyAt||t0))/1000:0,manual});
   end({text:txt(),secs:vs?(last-vs)/1000:0,manual});
  };
  function waitForManualFinish(message){
   manual=true;
   stopRecognition();
-  warn(message+" Responde en voz alta y pulsa «Terminar respuesta» para ver la solución.");
+  if(!readyAt)readyAt=Date.now();
+  setState("listening");
+  sessionAction("Ver respuesta","finish");
+  warn(message+" Responde en voz alta y pulsa «Ver respuesta» para ver la solución.");
  }
  S.abort=action=>action==="finish"?done():end({cmd:action});
  tm=setInterval(()=>{
   const now=Date.now(),timer=$("#timer");
-  if(timer)timer.textContent=fmt((now-t0)/1000);
+  if(timer&&readyAt)timer.textContent=fmt((now-readyAt)/1000);
   if(now-t0>MAX*1000)return done();
   if(manual)return;
+  if(!readyAt){
+   if(now-t0>ns*1000)waitForManualFinish("El reconocimiento de voz no se inició.");
+   return;
+  }
   if(vs&&now-last>SIL*1000)done();
-  else if(!vs&&now-t0>ns*1000)done();
+  else if(!vs&&now-readyAt>ns*1000)done();
  },200);
 
  if(S.micError)return waitForManualFinish(S.micError);
@@ -339,14 +488,25 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
  rec.lang=S.alang==="es"?"es-MX":"en-US";
  rec.continuous=!singleWord;
  rec.interimResults=true;
+ rec.onaudiostart=()=>{
+  if(!readyAt)readyAt=Date.now();
+  setState("listening");
+  if(retrying)warn("No se entendió la palabra. Dila otra vez.");
+ };
+ rec.onnomatch=()=>{if(singleWord)retrying=true};
  rec.onresult=event=>{
   cur=Array.from(event.results,result=>result[0].transcript).join(" ");
   if(!cur.trim())return;
+  if(retrying){
+   retrying=false;
+   warn("");
+  }
   if(!vs){vs=Date.now();setState("hearing")}
   last=Date.now();
   if(singleWord&&event.results[event.results.length-1].isFinal)done();
  };
  rec.onerror=event=>{
+  if(singleWord&&event.error==="no-speech")retrying=true;
   const message=micErrors[event.error];
   if(!message)return;
   S.micError=message;
@@ -383,6 +543,9 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
  }
  rec.onend=()=>{
   if(over||manual)return;
+  // Si el navegador solo devolvió una transcripción provisional, úsala para el verbo.
+  if(singleWord&&txt())return done();
+  if(retrying)setState("preparing");
   base+=cur+" ";
   cur="";
   startRecognition();
@@ -391,36 +554,72 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
 })}
 
 /* ---------- sesión ---------- */
+function waitAfterPrompt(){
+ return new Promise(resolve=>{
+  const finish=action=>{
+   clearTimeout(timer);
+   S.abort=null;
+   resolve(action);
+  };
+  const timer=setTimeout(finish,300);
+  S.abort=finish;
+ });
+}
+function isCurrentPractice(items){
+ return S.run&&S.items===items;
+}
 async function run(){
- while(S.run&&S.i<S.items.length){
+ const items=S.items;
+ while(isCurrentPractice(items)&&S.i<items.length){
   $("#cnt").textContent=`${S.verbMode?"Verbo":"Pregunta"} ${S.i+1} de ${S.items.length}`;
-  const it=S.items[S.i],r=await runItem(it);
-  if(r=="end")break;
+  const it=items[S.i],r=await runItem(it,items);
+  if(!isCurrentPractice(items))return;
+  if(r==="end")break;
   if(r=="repeat"){S.st.rep++;continue}
   if(r=="prev"){S.i=Math.max(0,S.i-1);continue}
   if(r=="next"){S.st.skip++;S.log.push({it,ans:"[saltada]",secs:0,model:model(it)});S.i++;continue}
   S.i++}
  try{speechSynthesis.cancel()}catch(e){}
  summary()}
-async function runItem(it){
+async function runItem(it,items){
  const tm=$("#timer");if(tm)tm.textContent="00:00";
  const isVerb=it.kind==="verb";
  warn("");
  const parts=[];if(it.pre)parts.push(it.pre[S.qlang]);parts.push(isVerb?it.base:it[S.qlang]);if(it.kind=="expand")parts.push(EXP[S.qlang]);
  const file=isVerb?`audio_verbos/${it.base}.wav`:undefined;
- setState("speaking");let c;for(const t of parts){c=await speak(t,S.qlang,file);if(c&&c!="finish")return c}
- await sleep(300);setState("listening");
- let r=await listen(20,isVerb);if(r.cmd)return r.cmd;
- let text=r.text,secs=r.secs;
+ setState("speaking");let c;
+ for(const t of parts){
+  c=await speak(t,S.qlang,file);
+  if(!isCurrentPractice(items))return;
+  if(c)return c;
+ }
+ c=await waitAfterPrompt();
+ if(!isCurrentPractice(items))return;
+ if(c)return c;
+ const r=await listen(20,isVerb);
+ if(!isCurrentPractice(items))return;
+ if(r.cmd)return r.cmd;
+ let text=r.text,secs=r.secs,manual=r.manual;
  if(it.kind=="expand"&&secs<MINX&&!r.manual){
-  setState("speaking");c=await speak(SHORT[S.qlang],S.qlang);if(c&&c!="finish")return c;
-  await sleep(300);setState("listening");const r2=await listen();if(r2.cmd)return r2.cmd;
-  text=(text+" "+r2.text).trim();secs+=r2.secs}
+  setState("speaking");c=await speak(SHORT[S.qlang],S.qlang);
+  if(!isCurrentPractice(items))return;
+  if(c)return c;
+  c=await waitAfterPrompt();
+  if(!isCurrentPractice(items))return;
+  if(c)return c;
+  const r2=await listen();
+  if(!isCurrentPractice(items))return;
+  if(r2.cmd)return r2.cmd;
+  text=(text+" "+r2.text).trim();secs+=r2.secs;
+  manual=r2.manual;
+ }
  const counted=isVerb?Boolean(text):secs>0;if(counted){S.st.ans++;S.st.secs.push(secs)}
  S.log.push({it,ans:text||(isVerb?"Sin transcripción":"[sin respuesta]"),secs,model:model(it)});
- if(S.showEach){
+ if(S.showEach||manual){
+  warn("");
   setState("review");showRv(S.log[S.log.length-1]);
   const c2=await new Promise(res=>{S.abort=k=>{S.abort=null;res(k=="finish"||k=="next"?"advance":k)}});
+  if(!isCurrentPractice(items))return;
   hideRv();
   if(c2=="repeat"){S.log.pop();if(counted){S.st.ans--;S.st.secs.pop()}}
   if(c2!="advance")return c2}
@@ -439,4 +638,4 @@ themeToggle.addEventListener("click",()=>{
  setTheme(dark);
  try{localStorage.setItem(themeKey,dark?"dark":"light")}catch(e){}
 });
-home();
+restoreScreen();

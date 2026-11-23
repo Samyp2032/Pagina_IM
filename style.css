@@ -44,6 +44,24 @@ main { padding-block: 1.5rem 3rem; }
   padding-top: env(safe-area-inset-top);
 }
 .header-inner { display: flex; align-items: center; gap: .65rem; min-height: 4rem; font-weight: 700; }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  color: var(--navy);
+  text-decoration: none;
+}
+.brand:hover { text-decoration: underline; }
+.header-left { display: flex; align-items: center; gap: .65rem; min-width: 0; }
+.header-pronunciation { flex: none; white-space: nowrap; }
+.header-pronunciation[aria-current="page"] { color: var(--blue); background: var(--soft); }
+.header-back {
+  flex: none;
+  min-width: 2.75rem;
+  padding-inline: .25rem;
+  font-size: 1.35rem;
+  line-height: 1;
+}
 .brand-mark {
   flex: none;
   width: 2rem;
@@ -165,6 +183,28 @@ button:hover, .button:hover { background: var(--control-hover); }
 .primary-action { width: 100%; box-shadow: 0 5px 12px #006eae20; }
 
 #practice { margin-top: 1.25rem; scroll-margin-top: 1rem; }
+.pronunciation { max-width: 36rem; margin-inline: auto; }
+.pronunciation h1 { margin-bottom: .4rem; font-size: clamp(1.6rem, 4vw, 2.2rem); }
+.pronunciation .field { margin-top: 1rem; }
+.pronunciation-forms { display: grid; gap: .55rem; margin-block: .75rem; }
+.pronunciation-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "label button" "word button";
+  align-items: center;
+  column-gap: .45rem;
+  padding: .55rem;
+  border: 1px solid var(--line);
+  border-radius: .65rem;
+  background: var(--review);
+}
+.pronunciation-form .muted { grid-area: label; font-size: .78rem; }
+.pronunciation-form strong { grid-area: word; overflow-wrap: anywhere; }
+.pronunciation-form button { grid-area: button; }
+.pronunciation-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .65rem; }
+.pronunciation-speed { display: flex; align-items: center; gap: .4rem; font-size: .9rem; }
+.pronunciation-status { margin-top: .55rem; }
+.pronunciation-status:empty { display: none; }
 .setup { display: grid; grid-template-columns: 1.1fr 1fr; gap: 1.25rem; align-items: start; }
 .box {
   min-width: 0;
@@ -346,7 +386,9 @@ button:hover, .button:hover { background: var(--control-hover); }
 }
 @media (max-width: 30rem) {
   .wrap { width: calc(100% - 1.5rem); }
-  .header-inner { gap: .45rem; font-size: .85rem; }
+  .header-inner { flex-wrap: wrap; gap: .45rem; padding-block: .5rem; font-size: .85rem; }
+  .header-left, .brand { gap: .35rem; }
+  .header-pronunciation { padding-inline: .45rem; font-size: .8rem; }
   .theme-toggle { font-size: .8rem; padding-inline: .55rem; }
   main { padding-top: .9rem; }
   .hero { grid-template-columns: 1fr; }
