@@ -494,3 +494,4 @@ button:hover, .button:hover { background: var(--control-hover); }
   .hero .row { grid-template-columns: 1fr; }
   .pronunciation-pagination { justify-content: center; }
 }
+

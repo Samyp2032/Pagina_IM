@@ -6,7 +6,7 @@ const REVK=Object.keys(D.reviews).map(t=>"Review "+t),LK=Object.keys(D.lessons).
 const EXP={es:"Amplía tu respuesta con detalles.",en:"Please expand your answer with details."};
 const SHORT={es:"Tu respuesta fue muy corta. Intenta ampliarla.",en:"Your answer was too short. Try to expand it."};
 const PRE={es:"Parte dos: Review and Check.",en:"Part two: Review and Check."};
-const SIL=2500,VERB_SILENCE=2000,MAX=120,MINX=15;
+const SIL=2500,VERB_SILENCE=1500,MAX=120,MINX=15;
 const SRC=window.SpeechRecognition||window.webkitSpeechRecognition;
 const VERB_MODES={
  past:{title:"Pasado simple",form:1,instruction:"Di el verbo en pasado simple.",phrase:"Yesterday I",answerForm:"el verbo en pasado"},
@@ -14,7 +14,7 @@ const VERB_MODES={
  present:{title:"Presente con he, she, it",form:3,instruction:"Di la forma de tercera persona.",phrase:"She",answerForm:"el verbo en presente"},
  ing:{title:"Presente continuo",form:4,instruction:"Di la forma terminada en -ing.",phrase:"I am",answerForm:"el verbo en -ing"}
 };
-const S={voiceContext:null,voiceMeter:null,screenLock:null,micTrack:null,micError:"",legacyMicUsed:false,verbMode:null,speed:1,qlang:"es",alang:"en",showEach:true,items:[],i:0,log:[],st:null,abort:null,run:false};
+const S={voiceContext:null,voiceMeter:null,screenLock:null,micTrack:null,micError:"",legacyMicUsed:false,verbMode:null,speed:1,qlang:"es",alang:"en",showEach:true,items:[],i:0,log:new Map(),st:null,abort:null,run:false};
 const fmt=s=>String(s/60|0).padStart(2,"0")+":"+String(s%60|0).padStart(2,"0");
 const mk=(n,l,es,en,kind="q",ord=0)=>({n,l,es,en,kind,ord});
 const shuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
@@ -41,18 +41,33 @@ function build(mode,chosen,rnd,verbCount=20){
   lesson.startsWith("Review ")?revI(lesson.slice(7)):lessonQuestions(lesson));
  return rnd?shuf(items):items;
 }
-function dyn(o){const d=new Date(),w=(d.getDay()+6)%7;
+function dyn(o,lang){
+ if(o!==3&&o!==4&&o!==107)return null;
+ const d=new Date(),w=(d.getDay()+6)%7;
+ if(lang==="es"){
+  const day=d.toLocaleDateString("es-MX",{weekday:"long"});
+  if(o===3)return `Hoy es ${day}.`;
+  if(o===4)return `${w===0?"Sí":"No"}. Hoy es ${day}.`;
+  return `Hoy es ${day} ${d.toLocaleDateString("es-MX",{day:"numeric",month:"long"})}.`;
+ }
  if(o==3)return `Today is ${DAYS[w]}.`;
  if(o==4)return w==0?"Yes, it is. Today is Monday.":`No, it isn’t. Today is ${DAYS[w]}.`;
  if(o==107){const n=d.getDate(),s=(n%100>=11&&n%100<=13)?"th":({1:"st",2:"nd",3:"rd"}[n%10]||"th");return `Today is ${DAYS[w]}, ${MONTHS[d.getMonth()]} ${n}${s}.`}
  return null}
-function model(it){if(it.kind==="verb")return it.answer;if(it.kind=="ask"){const q=D.lessons[it.l].qs;return "Example question: "+q[Math.random()*q.length|0][2]}return dyn(it.ord)||D.answers[it.ord]||""}
+function model(it,lang="en"){
+ if(it.kind==="verb")return it.answer;
+ if(it.kind==="ask"){
+  const q=D.lessons[it.l].qs;
+  return "Example question: "+q[Math.random()*q.length|0][2];
+ }
+ return dyn(it.ord,lang)||(lang==="es"?D.answersEs?.[it.ord]:D.answers[it.ord])||"";
+}
 
 /* ---------- pantallas ---------- */
 const waveform = '<span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>';
-function modeOptions(modes,checkFirst=false){
- return modes.map(([value,title,detail],i)=>`
-  <label class="mode"><input type="radio" name="mode" value="${value}" ${checkFirst&&i===0?"checked":""}>
+function modeOptions(modes){
+ return modes.map(([value,title,detail])=>`
+  <label class="mode"><input type="radio" name="mode" value="${value}">
    <span><strong>${title}</strong><small>${detail}</small></span>
   </label>`).join("");
 }
@@ -200,14 +215,14 @@ function home(){
      <button type="button" class="alt" role="tab" id="verb-modes-tab" aria-controls="verb-modes" aria-selected="false" tabindex="-1">Práctica de verbos</button>
     </div>
     <div class="modes" id="practice-modes" role="tabpanel" aria-labelledby="practice-modes-tab">
-     ${modeOptions(modes,true)}
+     ${modeOptions(modes)}
     </div>
     <div class="modes" id="verb-modes" role="tabpanel" aria-labelledby="verb-modes-tab" hidden>
      ${modeOptions(Object.entries(VERB_MODES).map(([mode,config])=>[
       mode,config.title,`${VERBOS.length} verbos. ${config.instruction}`
      ]))}
     </div>
-    <section class="session-settings" id="session-settings" aria-labelledby="settings-title">
+    <section class="session-settings" id="session-settings" aria-labelledby="settings-title" hidden>
      <h2 id="settings-title">Ajustes de sesión</h2>
      <div class="lesson-settings" id="lessons" hidden>
       <h3>Lecciones y repasos</h3>
@@ -242,15 +257,21 @@ function setupModeSettings(){
  const form=$("#practice"),settings=$("#session-settings");
  const tabs=[...form.querySelectorAll('[role="tab"]')];
  const panels=tabs.map(tab=>document.getElementById(tab.getAttribute("aria-controls")));
- function selectMode(radio){
-  const panel=radio.closest('[role="tabpanel"]'),mode=radio.value;
-  panel.dataset.selectedMode=mode;
+ let selected=null;
+ function selectMode(panel,radio){
+  if(selected&&selected!==radio)selected.checked=false;
+  selected=radio;
   tabs.forEach((tab,index)=>{
    const active=panels[index]===panel;
    panels[index].hidden=!active;
    tab.setAttribute("aria-selected",String(active));
    tab.tabIndex=active?0:-1;
   });
+  settings.hidden=!radio;
+  if(!radio)return;
+  radio.checked=true;
+  const mode=radio.value;
+  panel.dataset.selectedMode=mode;
   radio.parentElement.after(settings);
   const isVerb=Boolean(VERB_MODES[mode]);
   $("#lessons").hidden=mode!=="lesson";
@@ -262,9 +283,8 @@ function setupModeSettings(){
  function selectTab(index){
   const panel=panels[index];
   const radios=[...panel.querySelectorAll('input[name="mode"]')];
-  const radio=radios.find(option=>option.value===panel.dataset.selectedMode)||radios[0];
-  radio.checked=true;
-  selectMode(radio);
+  const radio=radios.find(option=>option.value===panel.dataset.selectedMode)||null;
+  selectMode(panel,radio);
  }
  tabs.forEach((tab,index)=>tab.addEventListener("click",()=>selectTab(index)));
  $("#practice-tabs").addEventListener("keydown",event=>{
@@ -277,31 +297,46 @@ function setupModeSettings(){
   selectTab(target);
   tabs[target].focus();
  });
- form.addEventListener("change",event=>{
-  if(event.target.name==="mode")selectMode(event.target);
+ form.addEventListener("click",event=>{
+  const radio=event.target;
+  if(radio!==selected)return;
+  const panel=radio.closest('[role="tabpanel"]');
+  delete panel.dataset.selectedMode;
+  selectMode(panel,null);
  });
- selectMode(form.querySelector('input[name="mode"]:checked'));
+ form.addEventListener("change",event=>{
+  const radio=event.target;
+  if(radio.name==="mode"&&radio.checked)selectMode(radio.closest('[role="tabpanel"]'),radio);
+ });
+ selectTab(0);
 }
 async function start(){
- const mode=document.querySelector("input[name=mode]:checked").value,chosen=[...document.querySelectorAll(".lc:checked")].map(x=>x.value);
+ const selected=$("#practice input[name=mode]:checked");
+ if(!selected||$("#session-settings").hidden)return;
+ const mode=selected.value,chosen=[...document.querySelectorAll(".lc:checked")].map(x=>x.value);
  if(mode=="lesson"&&!chosen.length){
   const message=$("#msg");
   message.textContent="Marca al menos una lección.";
   message.hidden=false;
   return;
  }
+ const verbMode=VERB_MODES[mode]||null;
+ const settings={
+  verbMode,qlang:verbMode?"en":$("#ql").value,alang:verbMode?"en":$("#al").value,
+  speed:Number($("#spd").value),showEach:$("#shw").checked
+ };
+ const items=build(mode,chosen,$("#rnd").checked,Number($("#verb-count").value));
+ await launchPractice(items,settings);
+}
+async function launchPractice(items,settings){
  stopPronunciation();
- S.verbMode=VERB_MODES[mode]||null;
- S.qlang=S.verbMode?"en":$("#ql").value;
- S.alang=S.verbMode?"en":$("#al").value;
- S.speed=+$("#spd").value;S.showEach=$("#shw").checked;
- S.items=build(mode,chosen,$("#rnd").checked,Number($("#verb-count").value));S.i=0;S.log=[];S.st={ans:0,skip:0,rep:0,secs:[]};S.run=true;
+ Object.assign(S,settings,{items,i:0,log:new Map(),st:{rep:0},run:true});
  keepScreenAwake(S.items);
  try{speechSynthesis.getVoices()}catch(e){}
  setScreenHistory("#sesion");
  session();
  if(S.verbMode&&SRC&&supportsRecognitionTrack())prepareVoiceMeter();
- await beginPractice(S.verbMode?null:loadManifest());
+ await beginPractice(S.qlang==="en"&&!S.verbMode?loadManifest():null);
 }
 function focusScreen(){
  A.focus({preventScroll:true});
@@ -447,7 +482,11 @@ const reports=new Map();
 function summary(){
  releasePracticeResources();
  S.run=false;
- const report={stats:S.st,entries:S.log,verbMode:S.verbMode};
+ const entries=S.items.flatMap((_,index)=>S.log.has(index)?[S.log.get(index)]:[]);
+ const answered=entries.filter(entry=>entry.counted);
+ const stats={ans:answered.length,secs:answered.map(entry=>entry.secs),
+  rep:S.st.rep,skip:entries.filter(entry=>entry.skipped).length};
+ const report={stats,entries,verbMode:S.verbMode};
  const id=reports.size+1;
  reports.set(id,report);
  setScreenHistory("#resumen",true,{report:id});
@@ -461,7 +500,8 @@ function renderSummary({stats:s,entries,verbMode}){
  A.innerHTML=`<section class="page-heading"><h1>Resumen de la sesión</h1></section>
   <dl class="stats">${stats.map(([label,value])=>`<div class="box"><dt>${label}</dt><dd>${value}</dd></div>`).join("")}</dl>
   <section class="box"><h2>${verbMode?verbMode.title:"Repaso de preguntas"}</h2>
-   ${entries.length?entries.map(e=>`<div class="item">${reviewPrompt(e.it)}<dl class="comparison"><div><dt>Tu respuesta</dt><dd>${esc(e.ans)}</dd></div>
+   ${entries.length?entries.map(e=>`<div class="item">${reviewPrompt(e.it)}
+    <dl class="comparison"><div><dt>Tu respuesta</dt><dd>${esc(e.ans)}</dd></div>
      <div><dt>Respuesta modelo</dt><dd>${esc(e.it.kind==="verb"?verbFormWords(e.model).join(" / "):e.model)}</dd></div></dl></div>`).join(""):"<p>No hubo respuestas en esta sesión.</p>"}
   </section>`;
  focusScreen();
@@ -496,7 +536,7 @@ function restoreScreen(){
 window.addEventListener("popstate",restoreScreen);
 
 /* ---------- voz ---------- */
-/* Las voces vienen pregrabadas en audio/ (las crea generar_audios.py). Si falta un audio, usa la voz del navegador. */
+/* Español pregrabado en audio_chatterbox/ e inglés en audio/. Si falta un audio, usa la voz del navegador. */
 let MAN=null,manifestRequest=null;
 const P={stop:null};
 function loadManifest(){
@@ -544,7 +584,8 @@ function playFile(url){return new Promise((res,rej)=>{
  S.abort=c=>{try{a.pause()}catch(e){}fin(c)};
  a.play().catch(e=>fin(undefined,e))})}
 async function speak(text,lang,file){
- const f=file||(MAN&&MAN[lang+"|"+text]);
+ const recordings=lang==="es"?globalThis.CHATTERBOX_AUDIO:MAN;
+ const f=file||recordings?.[lang+"|"+text];
  if(f){try{return await playFile(f)}catch(e){console.error("audio:",e)}}
  return sysSpeak(text,lang)}
 const micErrors={
@@ -569,23 +610,27 @@ function prepareVoiceMeter(){
   S.voiceContext.resume().catch(()=>{});
  }catch(e){}
 }
+function createVoiceMeter(context,stream){
+ const analyser=context.createAnalyser();
+ const input=context.createMediaStreamSource(stream);
+ analyser.fftSize=1024;
+ input.connect(analyser);
+ const samples=new Float32Array(analyser.fftSize);
+ return ()=>{
+  if(context.state!=="running")return null;
+  analyser.getFloatTimeDomainData(samples);
+  const power=samples.reduce((sum,sample)=>sum+sample*sample,0)/samples.length;
+  return power>=0.000144;
+ };
+}
 function connectVoiceMeter(stream){
- const context=S.voiceContext;
- if(!context)return;
- try{
-  const analyser=context.createAnalyser();
-  const input=context.createMediaStreamSource(stream);
-  analyser.fftSize=1024;
-  input.connect(analyser);
-  const samples=new Float32Array(analyser.fftSize);
-  // Mide el nivel de entrada sin reproducir ni guardar el micrófono.
-  S.voiceMeter=()=>{
-   if(context.state!=="running")return null;
-   analyser.getFloatTimeDomainData(samples);
-   const power=samples.reduce((sum,sample)=>sum+sample*sample,0)/samples.length;
-   return power>=0.000144;
-  };
- }catch(e){}
+ if(!S.voiceContext)return;
+ try{S.voiceMeter=createVoiceMeter(S.voiceContext,stream)}catch(e){}
+}
+function requestMicrophone(){
+ return navigator.mediaDevices.getUserMedia({audio:{
+  echoCancellation:{ideal:true},noiseSuppression:{ideal:true},autoGainControl:{ideal:true}
+ }});
 }
 function releasePracticeResources(){
  const context=S.voiceContext;
@@ -622,18 +667,20 @@ async function beginPractice(ready){
  if(SRC&&navigator.mediaDevices?.getUserMedia&&supportsRecognitionTrack()){
   $("#st").textContent="Preparando el micrófono";
   try{
-   const stream=await navigator.mediaDevices.getUserMedia({audio:{
-    echoCancellation:{ideal:true},
-    noiseSuppression:{ideal:true},
-    autoGainControl:{ideal:true}
-   }});
+   const stream=await requestMicrophone();
    if(cancelled){
     stream.getTracks().forEach(track=>track.stop());
     return;
    }
-   S.micTrack=stream.getAudioTracks()[0];
-   S.micTrack.enabled=false;
-   connectVoiceMeter(stream);
+   const track=stream.getAudioTracks()[0];
+   if(!track||track.readyState!=="live"){
+    stream.getTracks().forEach(input=>input.stop());
+    S.micError=micErrors["audio-capture"];
+   }else{
+    S.micTrack=track;
+    track.enabled=false;
+    connectVoiceMeter(stream);
+   }
   }catch(error){
    if(cancelled)return;
    S.micError=error.name==="NotAllowedError"?micErrors["not-allowed"]:micErrors["audio-capture"];
@@ -839,7 +886,11 @@ async function run(){
   if(r==="end")break;
   if(r=="repeat"){S.st.rep++;continue}
   if(r=="prev"){S.i=Math.max(0,S.i-1);continue}
-  if(r=="next"){S.st.skip++;S.log.push({it,ans:"[saltada]",secs:0,model:model(it)});S.i++;continue}
+  if(r==="next"){
+   if(!S.log.has(S.i))S.log.set(S.i,{it,ans:"[saltada]",secs:0,model:model(it,S.alang),skipped:true});
+   S.i++;
+   continue;
+  }
   S.i++}
  try{speechSynthesis.cancel()}catch(e){}
  summary()}
@@ -878,20 +929,24 @@ async function runItem(it,items){
   manual=r2.manual;
  }
  const counted=!consulted&&Boolean(text);
- if(counted){S.st.ans++;S.st.secs.push(secs)}
- const example=model(it);
+ const example=model(it,S.alang);
  const recognitionNote=isVerb&&!consulted?verbRecognitionNote(text,example,r.alternatives||[]):"";
  const answer=consulted?"Respuesta consultada":text||(isVerb?"Sin transcripción":"[sin respuesta]");
- S.log.push({it,ans:answer,secs,model:example,recognitionNote});
+ const previous=S.log.get(S.i);
+ const entry={it,ans:answer,secs,model:example,recognitionNote,counted};
+ S.log.set(S.i,entry);
  if(consulted||S.showEach||manual||(isVerb&&!text)){
   warn("");
   setState("review");
-  const reviewAudio=showRv(S.log[S.log.length-1]);
+  const reviewAudio=showRv(entry);
   const c2=await new Promise(res=>{S.abort=k=>{S.abort=null;res(k=="finish"||k=="next"?"advance":k)}});
   reviewAudio?.pause();
   if(!isCurrentPractice(items))return;
   hideRv();
-  if(c2=="repeat"){S.log.pop();if(counted){S.st.ans--;S.st.secs.pop()}}
+  if(c2==="repeat"){
+   if(previous)S.log.set(S.i,previous);
+   else S.log.delete(S.i);
+  }
   if(c2!="advance")return c2}
  return "advance"}
 /* ---------- tema ---------- */
