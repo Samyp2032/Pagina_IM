@@ -200,10 +200,7 @@ function home(){
    <div class="hero-copy">
     <h1>Simulador de <br>examen oral</h1>
     <p>Escucha cada pregunta, responde en voz alta y compara tu respuesta con un ejemplo.</p>
-    <div class="row">
-     <a class="button" href="#practice">Configurar práctica</a>
-     <button class="alt" type="button" onclick="answers()">Ver respuestas</button>
-    </div>
+    <button class="alt" type="button" onclick="answers()">Ver respuestas</button>
    </div>
    <div class="hero-art" aria-hidden="true"><div class="voice-disc">${waveform}</div></div>
   </section>

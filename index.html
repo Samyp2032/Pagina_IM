@@ -5,7 +5,8 @@
  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
  <meta name="theme-color" content="#edf5ff">
  <title>Simulador de examen oral</title>
- <link rel="stylesheet" href="style.css?v=d5347cf9e987">
+ <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='10'%20fill='%2309649c'/%3E%3Cpath%20d='M10%2013v6m6-10v14m6-10v6'%20stroke='white'%20stroke-width='3'%20stroke-linecap='round'/%3E%3C/svg%3E">
+ <link rel="stylesheet" href="style.css?v=b30e05f3ec1f">
 </head>
 <body>
  <header class="site-header">
@@ -15,7 +16,7 @@
      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
      <span>Práctica oral de inglés</span>
     </a>
-    <button type="button" class="quiet header-pronunciation" id="open-pronunciation" onclick="showPronunciation()">Pronunciación</button>
+    <a class="button header-pronunciation" id="open-pronunciation" href="#pronunciacion" onclick="event.preventDefault();showPronunciation()">Pronunciación</a>
    </div>
    <button type="button" class="alt theme-toggle" id="theme-toggle" aria-label="Modo oscuro" aria-pressed="false">
     <span class="theme-dot" aria-hidden="true"></span><span class="theme-label">Modo oscuro</span>
@@ -26,6 +27,6 @@
  <script src="data.js?v=e3e0da93517f"></script>
  <script src="verbos.js?v=f93687616509"></script>
  <script src="audio_chatterbox/manifest.js?v=6a634890b1b7"></script>
- <script src="app.js?v=d13979ebc667"></script>
+ <script src="app.js?v=f80308e8fcf0"></script>
 </body>
 </html>

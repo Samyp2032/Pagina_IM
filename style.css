@@ -53,8 +53,6 @@ main { padding-block: 1.5rem 3rem; }
 }
 .brand:hover { text-decoration: underline; }
 .header-left { display: flex; align-items: center; gap: .65rem; min-width: 0; }
-.header-pronunciation { flex: none; white-space: nowrap; }
-.header-pronunciation[aria-current="page"] { color: var(--blue); background: var(--soft); }
 .brand-mark {
   flex: none;
   width: 2rem;
@@ -172,6 +170,26 @@ button:hover, .button:hover { background: var(--control-hover); }
 .alt:hover { background: var(--tint); }
 .quiet { color: var(--muted); background: transparent; }
 .quiet:hover { background: var(--soft); }
+.header-pronunciation {
+  flex: none;
+  gap: .6rem;
+  padding-inline: .85rem;
+  color: var(--blue);
+  border-color: var(--selected);
+  background: var(--soft);
+  white-space: nowrap;
+}
+.header-pronunciation:hover { background: var(--tint); }
+.header-pronunciation[aria-current="page"] { color: #fff; background: var(--control); }
+.header-pronunciation::after {
+  width: .38rem;
+  height: .38rem;
+  margin-right: .12rem;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  content: "";
+  transform: rotate(45deg);
+}
 .sm { min-height: 2.25rem; padding: .3rem .75rem; font-size: .9rem; }
 .primary-action { width: 100%; box-shadow: 0 5px 12px #006eae20; }
 
@@ -451,16 +469,7 @@ button:hover, .button:hover { background: var(--control-hover); }
   }
   .header-left { display: contents; }
   .brand { grid-area: brand; gap: .45rem; font-size: .95rem; line-height: 1.2; }
-  .header-pronunciation {
-    grid-area: pronunciation;
-    justify-self: start;
-    min-height: 2.75rem;
-    padding: .35rem .7rem;
-    background: var(--soft);
-    color: var(--blue);
-    font-size: .9rem;
-  }
-  .header-pronunciation[aria-current="page"] { border-color: var(--selected); }
+  .header-pronunciation { grid-area: pronunciation; justify-self: start; font-size: .9rem; }
   .theme-toggle { grid-area: theme; width: 2.8rem; padding: 0; }
   .theme-toggle .theme-label { display: none; }
   .theme-dot { width: 1rem; height: 1rem; }
@@ -469,8 +478,6 @@ button:hover, .button:hover { background: var(--control-hover); }
   .hero h1 { font-size: clamp(2rem, 8vw, 2.65rem); line-height: 1.06; text-wrap: balance; }
   .hero h1 br { display: none; }
   .hero p { margin-block: .7rem 1rem; font-size: .95rem; }
-  .hero .row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
-  .hero .row > * { padding-inline: .45rem; font-size: .88rem; }
   .hero-art { display: none; }
   #practice { margin-top: .75rem; }
   .catalog { gap: .75rem; }
@@ -491,7 +498,6 @@ button:hover, .button:hover { background: var(--control-hover); }
 }
 
 @media (max-width: 22rem) {
-  .hero .row { grid-template-columns: 1fr; }
   .pronunciation-pagination { justify-content: center; }
 }
 
