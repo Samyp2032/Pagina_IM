@@ -348,6 +348,7 @@ function session(){
   <div class="timer" id="timer">00:00</div>
   <p class="notice warn" id="warn" role="alert"></p>
   <div class="review" id="rv" hidden></div>
+  <button type="button" id="finish-answer" class="primary-action" onclick="ab('finish')" hidden>Terminé de responder</button>
   <div class="row session-nav">
    <button class="alt" onclick="ab('prev')">Anterior</button>
    <button class="alt" onclick="ab('repeat')">Repetir</button>
@@ -373,6 +374,10 @@ function setState(n){
  const o=$("#orb"),s=$("#st");if(!o)return;
  o.className="o-"+n;
  s.textContent=S.verbMode&&n==="speaking"?"Escucha el verbo":LBL[n];
+ const finishButton=$("#finish-answer");
+ finishButton.hidden=n!=="listening"&&n!=="hearing"&&n!=="processing";
+ finishButton.disabled=n==="processing";
+ if(n==="processing")$("#session-next").disabled=true;
  if(n==="speaking"){
   $("#session-skip").hidden=false;
   sessionAction("Ver respuesta","reveal");
@@ -728,7 +733,7 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
  }
  function finishAnswer(){
   if(finishing)return;
-  if(!singleWord||!rec||manual)return done();
+  if(!rec||manual)return done();
   finishing=true;
   setState("processing");
   finalTimer=setTimeout(done,1200);
@@ -782,6 +787,7 @@ function listen(ns=20,singleWord=false){return new Promise(res=>{
  rec.interimResults=true;
  if(singleWord)rec.maxAlternatives=5;
  rec.onaudiostart=()=>{
+  if(finishing)return;
   if(!readyAt)readyAt=Date.now();
   if(!vs)setState("listening");
   if(retrying)warn(`No se entendió la palabra. Dila otra vez o prueba «${verbRetryExample()}».`);

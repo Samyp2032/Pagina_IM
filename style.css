@@ -361,6 +361,8 @@ button:hover, .button:hover { background: var(--control-hover); }
 #orb.o-speaking { color: #075eae; background: #dbeeff; }
 .state { font-size: clamp(1.4rem, 4vw, 1.9rem); }
 .timer { margin-top: .4rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+#finish-answer { margin-top: 1rem; min-height: 3rem; font-weight: 750; }
+#finish-answer:disabled { cursor: default; opacity: .65; }
 .session-nav { margin-block: 1.3rem .65rem; }
 .session-nav button { flex: 1 1 auto; }
 .session-tools { display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem; margin-top: .55rem; }
