@@ -49,7 +49,7 @@ globalThis.CHATTERBOX_AUDIO = {
   "es|¿Con qué frecuencia vas a conciertos?": "audio_chatterbox/es_a7285a3d5c.wav",
   "es|¿Cuál es el primer día de la semana?": "audio_chatterbox/es_e04437d0b1.wav",
   "es|¿Cuál es la temperatura habitual en Ensenada durante el invierno?": "audio_chatterbox/es_181870bcf1.wav",
-  "es|¿Cuál es su primer nombre de el)?": "audio_chatterbox/es_b6276d8034.wav",
+  "es|¿Cuál es su nombre?": "audio_chatterbox/es_4b7de28530.wav",
   "es|¿Cuál es tu apellido?": "audio_chatterbox/es_64d34a036a.wav",
   "es|¿Cuál es tu bebida favorita?": "audio_chatterbox/es_c3e5eab6a6.wav",
   "es|¿Cuál es tu correo electrónico?": "audio_chatterbox/es_74d6d71c34.wav",
